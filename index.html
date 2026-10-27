@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#e67e22" />
+  <title>¿Qué hacemos hoy? · Vacaciones en Dallas</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <header class="app-header">
+    <h1>🧳 Vacaciones en Dallas</h1>
+    <p class="subtitulo">Mamá, papá... ¿qué les late hacer? Elijan lo que quieran ❤️</p>
+
+    <nav class="tabs" role="tablist">
+      <button class="tab activa" data-vista="actividades" role="tab">🎢 Actividades</button>
+      <button class="tab" data-vista="dias" role="tab">📅 Los días</button>
+      <button class="tab" data-vista="favoritos" role="tab">❤️ Favoritos</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- VISTA: ACTIVIDADES -->
+    <section id="vista-actividades" class="vista activa">
+      <p class="ayuda">
+        Toca ❤️ para marcar lo que te gusta. Mantén presionada una tarjeta y
+        arrástrala a <strong>Los días</strong> para agendarla.
+      </p>
+      <div id="categorias"></div>
+    </section>
+
+    <!-- VISTA: DÍAS -->
+    <section id="vista-dias" class="vista">
+      <p class="ayuda">
+        Arrastra actividades desde <strong>Actividades</strong> o muévelas entre
+        días. Para quitar una, arrástrala a la papelera 🗑️ de abajo.
+      </p>
+      <div id="dias"></div>
+    </section>
+
+    <!-- VISTA: FAVORITOS -->
+    <section id="vista-favoritos" class="vista">
+      <p class="ayuda">Todo lo que han marcado con ❤️.</p>
+      <div id="favoritos"></div>
+    </section>
+  </main>
+
+  <!-- Papelera para quitar actividades de un día (aparece al arrastrar) -->
+  <div id="papelera" class="papelera" aria-hidden="true">🗑️ Soltar aquí para quitar</div>
+
+  <footer class="app-footer">
+    <button id="btn-reiniciar" class="btn-reiniciar">↺ Reiniciar todo</button>
+    <p class="nota">Tus elecciones se guardan en este dispositivo.</p>
+  </footer>
+
+  <!-- Modal del mapa -->
+  <div id="modal-mapa" class="modal" aria-hidden="true">
+    <div class="modal-caja">
+      <button class="modal-cerrar" aria-label="Cerrar">✕</button>
+      <h3 id="modal-titulo"></h3>
+      <div class="modal-mapa-contenedor"><iframe id="modal-iframe" title="Mapa" loading="lazy"></iframe></div>
+      <a id="modal-abrir-maps" class="btn-maps" target="_blank" rel="noopener">Abrir en Google Maps ↗</a>
+    </div>
+  </div>
+
+  <!-- Librería de drag & drop (táctil + escritorio), desde CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
