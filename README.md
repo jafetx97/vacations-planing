@@ -46,6 +46,16 @@ Todo (lugares, fotos, mapas, días) está en **`data.js`**.
 
 **Mapa** — ajusta el texto del campo `mapa` (es lo que se busca en Google Maps).
 
+## Inicio de sesión (Firebase)
+
+- `firebase-config.js`: pega aquí el `firebaseConfig` de tu proyecto. Mientras diga
+  `PEGA_AQUI`, la app funciona en modo local, sin sesión.
+- `firestore.rules`: reglas de seguridad. Cópialas en Firestore → Reglas → Publicar.
+- **Quién puede editar:** colección `miembros` en Firestore. Cada documento tiene
+  como ID el correo en minúsculas (ej. `mama@gmail.com`) y un campo `nombre`
+  (ej. `"Mamá"`). Quien no esté ahí, o no inicie sesión, solo puede ver.
+- Los correos no están en el código, porque el repo es público.
+
 ## Archivos
 
 - `index.html` — estructura de la página

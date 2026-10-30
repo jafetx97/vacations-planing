@@ -35,6 +35,11 @@ function guardar() {
   localStorage.setItem(CLAVE_GUARDADO, JSON.stringify(estado));
 }
 
+// ---------- Sesión ----------
+// Hasta que auth.js diga lo contrario, la app arranca en solo lectura.
+let sesion = { estado: "cargando" };
+let puedeEditar = false;
+
 // ---------- Utilidades ----------
 const $ = (sel, raiz = document) => raiz.querySelector(sel);
 const $$ = (sel, raiz = document) => [...raiz.querySelectorAll(sel)];
@@ -71,9 +76,20 @@ function crearTarjeta(lugar, diaId = null) {
     ? `<div class="agendado">📅 ${agendado.map((d) => d.corto).join(", ")}</div>`
     : "";
 
-  const botonDia = diaId
-    ? `<button class="dia-btn mover" data-id="${lugar.id}" data-dia="${diaId}">🔀 Mover / Quitar</button>`
-    : `<button class="dia-btn" data-id="${lugar.id}">➕ Agregar al día</button>`;
+  // En modo solo lectura no hay botones para votar ni agendar.
+  const botonDia = !puedeEditar
+    ? ""
+    : diaId
+      ? `<button class="dia-btn mover" data-id="${lugar.id}" data-dia="${diaId}">🔀 Mover / Quitar</button>`
+      : `<button class="dia-btn" data-id="${lugar.id}">➕ Agregar al día</button>`;
+
+  const botonFav = !puedeEditar
+    ? (fav ? `<span class="fav-solo" aria-label="Favorito">❤️</span>` : "")
+    : `<button class="fav-btn ${fav ? "activo" : ""}" data-id="${lugar.id}"
+               aria-label="${fav ? "Quitar de favoritos" : "Marcar como favorito"}"
+               aria-pressed="${fav}">
+         ${fav ? "❤️" : "🤍"}
+       </button>`;
 
   el.innerHTML = `
     <img src="${fotoDe(lugar)}" alt="${lugar.nombre}" loading="lazy" />
@@ -81,11 +97,7 @@ function crearTarjeta(lugar, diaId = null) {
       <div class="nombre">${lugar.nombre}</div>
       ${etiquetas}
       <div class="acciones">
-        <button class="fav-btn ${fav ? "activo" : ""}" data-id="${lugar.id}"
-                aria-label="${fav ? "Quitar de favoritos" : "Marcar como favorito"}"
-                aria-pressed="${fav}">
-          ${fav ? "❤️" : "🤍"}
-        </button>
+        ${botonFav}
         ${lugar.mapa ? `<button class="mapa-btn" data-id="${lugar.id}">📍 Mapa</button>` : ""}
       </div>
       ${botonDia}
@@ -287,6 +299,7 @@ function pintarFavoritos() {
 //  FAVORITOS: toggle
 // ============================================================
 function alternarFavorito(id) {
+  if (!puedeEditar) return;
   const i = estado.favoritos.indexOf(id);
   if (i >= 0) estado.favoritos.splice(i, 1);
   else estado.favoritos.push(id);
@@ -314,6 +327,7 @@ const modalDia = $("#modal-dia");
 let seleccion = null; // { lugarId, diaOrigen | null }
 
 function abrirSelectorDia(lugarId, diaOrigen = null) {
+  if (!puedeEditar) return;
   const lugar = LUGARES_POR_ID[lugarId];
   seleccion = { lugarId, diaOrigen };
 
@@ -355,7 +369,7 @@ function abrirSelectorDia(lugarId, diaOrigen = null) {
 }
 
 function elegirDia(diaId) {
-  if (!seleccion) return;
+  if (!seleccion || !puedeEditar) return;
   const { lugarId, diaOrigen } = seleccion;
   const lugar = LUGARES_POR_ID[lugarId];
 
@@ -378,7 +392,7 @@ function elegirDia(diaId) {
 }
 
 function quitarSeleccion() {
-  if (!seleccion || !seleccion.diaOrigen) return;
+  if (!seleccion || !seleccion.diaOrigen || !puedeEditar) return;
   const { lugarId, diaOrigen } = seleccion;
   quitarDeDia(lugarId, diaOrigen);
   guardar();
@@ -426,6 +440,82 @@ function avisar(texto) {
 }
 
 // ============================================================
+//  SESIÓN (la llama auth.js)
+//  estados: "cargando" | "local" | "anonimo" | "invitado" | "miembro" | "error"
+// ============================================================
+function establecerSesion(nueva) {
+  sesion = nueva;
+  // "local" = Firebase sin configurar: se puede editar como antes.
+  puedeEditar = sesion.estado === "miembro" || sesion.estado === "local";
+  pintarSesion();
+  if (!puedeEditar) $$(".modal.abierto").forEach(cerrarModal);
+  $("#btn-reiniciar").hidden = !puedeEditar;
+  refrescarTodo();
+}
+
+function pintarSesion() {
+  const cont = $("#sesion");
+  const aviso = $("#aviso-lectura");
+  cont.innerHTML = "";
+
+  // Los nombres y fotos vienen de Google: los ponemos con textContent
+  // (no con innerHTML) para no inyectar HTML por accidente.
+  const texto = (t) => {
+    const s = document.createElement("span");
+    s.className = "sesion-texto";
+    s.textContent = t;
+    return s;
+  };
+  const boton = (id, t) => {
+    const b = document.createElement("button");
+    b.id = id;
+    b.className = "btn-sesion";
+    b.textContent = t;
+    return b;
+  };
+  const avatar = () => {
+    if (!sesion.foto) return null;
+    const img = document.createElement("img");
+    img.className = "sesion-avatar";
+    img.src = sesion.foto;
+    img.alt = "";
+    img.referrerPolicy = "no-referrer"; // las fotos de Google lo requieren
+    return img;
+  };
+
+  let mensajeLectura = "";
+  switch (sesion.estado) {
+    case "local":
+      break; // sin Firebase: no mostramos nada
+    case "cargando":
+      cont.append(texto("Conectando…"));
+      break;
+    case "anonimo":
+      cont.append(boton("btn-login", "🔐 Iniciar sesión con Google"));
+      mensajeLectura = "👀 Estás en modo solo lectura. Inicia sesión para votar y agendar.";
+      break;
+    case "invitado":
+      [avatar(), texto(sesion.email), boton("btn-logout", "Salir")].forEach((n) => n && cont.append(n));
+      mensajeLectura = sesion.mensaje ||
+        "👀 Tu cuenta no está en la lista de la familia, así que solo puedes ver. Pídele a quien organiza que te agregue.";
+      break;
+    case "miembro":
+      [avatar(), texto(`Hola, ${sesion.nombre}`), boton("btn-logout", "Salir")].forEach((n) => n && cont.append(n));
+      break;
+    case "error":
+      cont.append(texto(sesion.mensaje || "Algo salió mal."));
+      mensajeLectura = "👀 Modo solo lectura.";
+      break;
+  }
+
+  aviso.textContent = mensajeLectura;
+  aviso.hidden = !mensajeLectura;
+}
+
+// auth.js (módulo) se comunica con la app por aquí.
+window.App = { establecerSesion };
+
+// ============================================================
 //  NAVEGACIÓN ENTRE VISTAS (tabs)
 // ============================================================
 function cambiarVista(nombre) {
@@ -466,7 +556,7 @@ document.addEventListener("click", (e) => {
   }
 
   if (t.closest("#btn-reiniciar")) {
-    if (confirm("¿Borrar todas las elecciones y empezar de cero?")) {
+    if (puedeEditar && confirm("¿Borrar todas las elecciones y empezar de cero?")) {
       localStorage.removeItem(CLAVE_GUARDADO);
       estado = cargarEstado();
       refrescarTodo();

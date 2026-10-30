@@ -15,6 +15,7 @@
   <header class="app-header">
     <h1>🧳 Vacaciones en Dallas</h1>
     <p class="subtitulo">Mamá, papá... ¿qué les late hacer? Elijan lo que quieran ❤️</p>
+    <div id="sesion" class="sesion" aria-live="polite"></div>
 
     <nav class="tabs" role="tablist">
       <button class="tab activa" data-vista="actividades" role="tab">🎢 Actividades</button>
@@ -24,6 +25,9 @@
   </header>
 
   <main>
+    <!-- Aviso de modo solo lectura (lo controla app.js) -->
+    <p id="aviso-lectura" class="aviso-lectura" hidden></p>
+
     <!-- VISTA: ACTIVIDADES -->
     <section id="vista-actividades" class="vista activa">
       <p class="ayuda">
@@ -50,7 +54,7 @@
   </main>
 
   <footer class="app-footer">
-    <button id="btn-reiniciar" class="btn-reiniciar">↺ Reiniciar todo</button>
+    <button id="btn-reiniciar" class="btn-reiniciar" hidden>↺ Reiniciar todo</button>
     <p class="nota">
       Tus elecciones se guardan en este dispositivo · Fotos:
       <a href="https://commons.wikimedia.org" target="_blank" rel="noopener">Wikimedia Commons</a>
@@ -83,5 +87,7 @@
 
   <script src="data.js"></script>
   <script src="app.js"></script>
+  <!-- Módulo de inicio de sesión (corre después de app.js) -->
+  <script type="module" src="auth.js"></script>
 </body>
 </html>

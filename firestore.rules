@@ -1,0 +1,38 @@
+rules_version = '2';
+
+// ============================================================
+//  REGLAS DE SEGURIDAD DE FIRESTORE
+//  Copia y pega este archivo en:
+//  Consola de Firebase -> Firestore Database -> Reglas -> Publicar
+//
+//  - miembros/{correo}: la lista de la familia. Se edita SOLO desde
+//    la consola. Cada persona solo puede leer su propio documento,
+//    así nadie puede ver los correos de los demás.
+//  - viajes/...: cualquiera puede leer (modo solo lectura sin sesión),
+//    pero solo los miembros pueden escribir. (Se usa en la etapa 2.)
+//  - Todo lo demás: bloqueado.
+// ============================================================
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function correo() {
+      return request.auth.token.email.lower();
+    }
+
+    function esMiembro() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && exists(/databases/$(database)/documents/miembros/$(correo()));
+    }
+
+    match /miembros/{email} {
+      allow read: if request.auth != null && correo() == email;
+      allow write: if false;
+    }
+
+    match /viajes/{viajeId}/{documento=**} {
+      allow read: if true;
+      allow write: if esMiembro();
+    }
+  }
+}
