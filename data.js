@@ -1,18 +1,7 @@
 // ============================================================
-//  DATOS DEL ITINERARIO
-//  Aquí vive toda la información. Para cambiar fotos, mapas o
-//  agregar lugares, edita solo este archivo.
-//
-//  Cada lugar tiene:
-//    id     -> identificador único (no repetir)
-//    nombre
-//    mapa   -> texto que se busca en Google Maps (nombre + ciudad)
-//    wiki   -> (opcional) título del artículo en Wikipedia en inglés.
-//              La foto principal del artículo se usa automáticamente.
-//    foto   -> (opcional) TU foto. Si la pones, tiene prioridad sobre todo.
-//              Puede ser una URL o una ruta local, ej. "img/tia-lola.jpg"
-//
-//  Orden de prioridad de la imagen:  foto  ->  wiki  ->  placeholder de color
+//  CONFIGURACIÓN FIJA DEL VIAJE
+//  Categorías, grupos y días. Los LUGARES ya no viven aquí:
+//  están en Firestore (y la lista original, en semilla.js).
 // ============================================================
 
 // Placeholder de color con el nombre encima (respaldo si no hay foto).
@@ -21,109 +10,21 @@ function placeholder(texto, color) {
   return `https://placehold.co/600x400/${color}/ffffff?text=${t}&font=poppins`;
 }
 
+// Las categorías son fijas. Si agregas una, agrégala también en
+// firestore.rules (lista CATEGORIAS_VALIDAS) y en algún GRUPO.
 const CATEGORIAS = [
-  {
-    id: "familia",
-    titulo: "Familia",
-    emoji: "👨‍👩‍👧",
-    color: "e67e22",
-    lugares: [
-      { id: "tia-lola", nombre: "Tía Lola", mapa: "" },
-      { id: "tia-belen", nombre: "Tía Belén", mapa: "" },
-      { id: "tio-mouse", nombre: "Tío Mouse", mapa: "" },
-      { id: "chitaro", nombre: "Chítaro", mapa: "" },
-    ],
-  },
-  {
-    id: "actividades",
-    titulo: "Actividades",
-    emoji: "🎢",
-    color: "2980b9",
-    lugares: [
-      { id: "reunion-tower", nombre: "Reunion Tower", mapa: "Reunion Tower, Dallas, TX", wiki: "Reunion Tower" },
-      { id: "stockyards", nombre: "Stockyards", mapa: "Fort Worth Stockyards, TX", wiki: "Fort Worth Stockyards" },
-      { id: "boliche", nombre: "Boliche", mapa: "bowling near Dallas, TX", wiki: "Tenpin bowling" },
-      { id: "cowboys", nombre: "Partido Cowboys", mapa: "AT&T Stadium, Arlington, TX", wiki: "AT&T Stadium" },
-      { id: "mavericks", nombre: "Partido Mavericks", mapa: "American Airlines Center, Dallas, TX", wiki: "American Airlines Center" },
-      { id: "grapevine-mills", nombre: "Grapevine Mills", mapa: "Grapevine Mills, Grapevine, TX", wiki: "Grapevine Mills" },
-      { id: "allen-outlets", nombre: "Allen Premium Outlets", mapa: "Allen Premium Outlets, Allen, TX" },
-      { id: "buc-ees", nombre: "Buc-ee's", mapa: "Buc-ee's, Terrell, TX", wiki: "Buc-ee's" },
-      { id: "jfk-memorial", nombre: "JFK Memorial Plaza", mapa: "John F. Kennedy Memorial Plaza, Dallas, TX", wiki: "Dealey Plaza" },
-      { id: "centro-dallas", nombre: "Centro Dallas (caminar)", mapa: "Downtown Dallas, TX", wiki: "Downtown Dallas" },
-      { id: "gas-monkey", nombre: "Gas Monkey", mapa: "Gas Monkey Bar N' Grill, Dallas, TX", wiki: "Gas Monkey Bar N' Grill" },
-    ],
-  },
-  {
-    id: "desayunos",
-    titulo: "Desayunos",
-    emoji: "🍳",
-    color: "f39c12",
-    lugares: [
-      { id: "pan-pa-vos", nombre: "Pan Pa' Vos", mapa: "Pan Pa Vos bakery Dallas TX" },
-      { id: "kolaches", nombre: "Kolaches", mapa: "kolache shop Dallas TX", wiki: "Klobásník" },
-      { id: "ihop", nombre: "IHOP", mapa: "IHOP Dallas TX", wiki: "IHOP" },
-      { id: "donuts", nombre: "Donuts", mapa: "donut shop Dallas TX", wiki: "Doughnut" },
-      { id: "dennys", nombre: "Denny's", mapa: "Denny's Dallas TX", wiki: "Denny's" },
-      { id: "jjs", nombre: "JJ's", mapa: "JJ's restaurant Dallas TX" },
-    ],
-  },
-  {
-    id: "comida-rapida",
-    titulo: "Comida rápida / Hamburguesas",
-    emoji: "🍔",
-    color: "c0392b",
-    lugares: [
-      { id: "whataburger", nombre: "Whataburger", mapa: "Whataburger Dallas TX", wiki: "Whataburger" },
-      { id: "taco-bell", nombre: "Taco Bell", mapa: "Taco Bell Dallas TX", wiki: "Taco Bell" },
-      { id: "daves-hot-chicken", nombre: "Dave's Hot Chicken", mapa: "Dave's Hot Chicken Dallas TX", wiki: "Dave's Hot Chicken" },
-      { id: "in-n-out", nombre: "In-N-Out", mapa: "In-N-Out Burger Dallas TX", wiki: "In-N-Out Burger" },
-      { id: "cicis", nombre: "Cicis", mapa: "Cicis Pizza Dallas TX", wiki: "Cicis Pizza" },
-      { id: "panda-express", nombre: "Panda Express", mapa: "Panda Express Dallas TX", wiki: "Panda Express" },
-    ],
-  },
-  {
-    id: "restaurantes",
-    titulo: "Restaurantes",
-    emoji: "🍽️",
-    color: "27ae60",
-    lugares: [
-      { id: "olive-garden", nombre: "Olive Garden", mapa: "Olive Garden Dallas TX", wiki: "Olive Garden" },
-      { id: "texas-roadhouse", nombre: "Texas Roadhouse", mapa: "Texas Roadhouse Dallas TX", wiki: "Texas Roadhouse" },
-      { id: "espadas-brasilenas", nombre: "Espadas brasileñas", mapa: "Brazilian steakhouse Dallas TX", wiki: "Churrascaria" },
-    ],
-  },
-  {
-    id: "mexicano",
-    titulo: "Mexicano",
-    emoji: "🌮",
-    color: "8e44ad",
-    lugares: [
-      { id: "taqueria-nuevo-leon", nombre: "Taquería Nuevo León", mapa: "Taqueria Nuevo Leon Dallas TX" },
-      { id: "delicias-aguascalientes", nombre: "Delicias Aguascalientes", mapa: "Delicias Aguascalientes Dallas TX" },
-    ],
-  },
-  {
-    id: "casero",
-    titulo: "Casero",
-    emoji: "🏠",
-    color: "16a085",
-    lugares: [
-      { id: "jugo-de-carne", nombre: "Jugo de carne / Lengua (Roy)", mapa: "" },
-      { id: "carne-asada", nombre: "Carne asada", mapa: "", wiki: "Carne asada" },
-    ],
-  },
-  {
-    id: "cenas",
-    titulo: "Cenas",
-    emoji: "🌙",
-    color: "34495e",
-    lugares: [
-      { id: "panaderia-guatemalteca", nombre: "Panadería guatemalteca", mapa: "Guatemalan bakery Dallas TX", wiki: "Pan dulce" },
-      { id: "aunt-annies", nombre: "Auntie Anne's", mapa: "Auntie Anne's Dallas TX", wiki: "Auntie Anne's" },
-      { id: "escape-360", nombre: "Escape 360", mapa: "Escape 360 Dallas TX" },
-    ],
-  },
+  { id: "familia",       titulo: "Familia",                      emoji: "👨‍👩‍👧", color: "e67e22" },
+  { id: "actividades",   titulo: "Actividades",                  emoji: "🎢", color: "2980b9" },
+  { id: "desayunos",     titulo: "Desayunos",                    emoji: "🍳", color: "f39c12" },
+  { id: "comida-rapida", titulo: "Comida rápida / Hamburguesas", emoji: "🍔", color: "c0392b" },
+  { id: "restaurantes",  titulo: "Restaurantes",                 emoji: "🍽️", color: "27ae60" },
+  { id: "mexicano",      titulo: "Mexicano",                     emoji: "🌮", color: "8e44ad" },
+  { id: "casero",        titulo: "Casero",                       emoji: "🏠", color: "16a085" },
+  { id: "cenas",         titulo: "Cenas",                        emoji: "🌙", color: "34495e" },
 ];
+
+const CATEGORIAS_POR_ID = {};
+CATEGORIAS.forEach((c) => (CATEGORIAS_POR_ID[c.id] = c));
 
 // ============================================================
 //  GRUPOS (se pueden expandir / retraer en la pestaña Actividades)
@@ -167,16 +68,5 @@ const DIAS = [
 const DIAS_POR_ID = {};
 DIAS.forEach((d) => (DIAS_POR_ID[d.id] = d));
 
-// Índice rápido id -> lugar, para buscar sin recorrer todo.
-// Cada lugar recibe su placeholder según el color de su categoría.
+// Índice id -> lugar. Lo llena app.js (desde Firestore o desde semilla.js).
 const LUGARES_POR_ID = {};
-CATEGORIAS.forEach((cat) => {
-  cat.lugares.forEach((l) => {
-    LUGARES_POR_ID[l.id] = {
-      ...l,
-      categoria: cat.id,
-      emoji: cat.emoji,
-      respaldo: placeholder(l.nombre, cat.color),
-    };
-  });
-});

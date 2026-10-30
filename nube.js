@@ -3,6 +3,8 @@
 //
 //  viajes/{VIAJE}/agenda/{diaId} -> { lugares: [ids], actualizadoPor, actualizadoEn }
 //  viajes/{VIAJE}/votos/{uid}    -> { nombre, lugares: [ids], actualizadoEn }
+//  viajes/{VIAJE}/lugares/{id}   -> { nombre, categoria, mapa, mapsUrl, web, wiki,
+//                                     creadoPor, creadoEn, actualizadoPor, actualizadoEn }
 //
 //  Usamos arrayUnion / arrayRemove para que dos personas puedan
 //  cambiar cosas al mismo tiempo sin borrarse lo de la otra.
@@ -12,12 +14,24 @@ const VIAJE = "dallas";
 
 export function iniciarNube(db, fs) {
   const {
-    collection, doc, onSnapshot, setDoc, writeBatch,
+    collection, doc, onSnapshot, setDoc, updateDoc, writeBatch,
     arrayUnion, arrayRemove, serverTimestamp,
   } = fs;
 
   const colAgenda = collection(db, "viajes", VIAJE, "agenda");
   const colVotos = collection(db, "viajes", VIAJE, "votos");
+  const colLugares = collection(db, "viajes", VIAJE, "lugares");
+
+  onSnapshot(
+    colLugares,
+    { includeMetadataChanges: true },
+    (snap) => {
+      const lista = [];
+      snap.forEach((d) => lista.push({ ...d.data(), id: d.id }));
+      window.App.actualizarLugares(lista, !snap.metadata.fromCache);
+    },
+    (err) => window.App.errorNube(err)
+  );
 
   // ---------- Escuchar cambios (cualquiera puede leer) ----------
   // includeMetadataChanges: así sabemos cuándo ya llegó la versión del
@@ -81,6 +95,49 @@ export function iniciarNube(db, fs) {
         datosVoto(si ? arrayUnion(lugarId) : arrayRemove(lugarId), quien),
         { merge: true }
       );
+    },
+
+    // ---------- Lugares ----------
+    // datos: { nombre, categoria, mapa, mapsUrl, web, wiki } (todos string)
+    async crearLugar(id, datos, quien) {
+      await setDoc(doc(colLugares, id), {
+        ...datos,
+        creadoPor: quien.nombre,
+        creadoEn: serverTimestamp(),
+        actualizadoPor: quien.nombre,
+        actualizadoEn: serverTimestamp(),
+      });
+    },
+
+    async editarLugar(id, datos, quien) {
+      await updateDoc(doc(colLugares, id), {
+        ...datos,
+        actualizadoPor: quien.nombre,
+        actualizadoEn: serverTimestamp(),
+      });
+    },
+
+    // Solo el admin (lo validan las reglas). También lo quita de la agenda.
+    async borrarLugar(id, diasDondeEsta, quien) {
+      const lote = writeBatch(db);
+      lote.delete(doc(colLugares, id));
+      diasDondeEsta.forEach((diaId) => {
+        lote.set(doc(colAgenda, diaId), datosDia(arrayRemove(id), quien), { merge: true });
+      });
+      await lote.commit();
+    },
+
+    // Sube la lista original una sola vez. Escrituras separadas para que
+    // cada una se valide por su cuenta en las reglas.
+    async sembrarLugares(lista, quien) {
+      await Promise.all(lista.map((l) => this.crearLugar(l.id, {
+        nombre: l.nombre,
+        categoria: l.categoria,
+        mapa: l.mapa || "",
+        mapsUrl: "",
+        web: "",
+        wiki: l.wiki || "",
+      }, quien)));
     },
 
     // Sube un plan guardado en el navegador. Se SUMA a lo que ya hay.

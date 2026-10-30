@@ -34,6 +34,7 @@
         Toca ❤️ para marcar lo que te gusta y <strong>➕ Agregar al día</strong>
         para agendarlo.
       </p>
+      <div id="barra-actividades" class="barra-actividades"></div>
       <div id="categorias"></div>
     </section>
 
@@ -82,10 +83,53 @@
     </div>
   </div>
 
+  <!-- Modal para agregar / editar un lugar -->
+  <div id="modal-lugar" class="modal" aria-hidden="true">
+    <div class="modal-caja" role="dialog" aria-modal="true" aria-labelledby="lugar-titulo">
+      <button class="modal-cerrar" type="button" aria-label="Cerrar">✕</button>
+      <h3 id="lugar-titulo">Nuevo lugar</h3>
+
+      <form id="form-lugar" class="form-lugar" novalidate>
+        <label for="lugar-nombre">Nombre <span class="obligatorio">*</span></label>
+        <input id="lugar-nombre" type="text" maxlength="60" required autocomplete="off"
+               placeholder="Ej. Taquería El Güero" />
+
+        <label for="lugar-categoria">Categoría</label>
+        <select id="lugar-categoria"></select>
+
+        <label for="lugar-maps">Enlace de Google Maps <span class="opcional">(opcional)</span></label>
+        <input id="lugar-maps" type="url" inputmode="url" autocomplete="off"
+               placeholder="https://maps.app.goo.gl/..." aria-describedby="ayuda-maps" />
+        <small id="ayuda-maps" class="ayuda-campo">En Google Maps: abre el lugar → Compartir → Copiar enlace.</small>
+
+        <label for="lugar-web">Sitio web <span class="opcional">(opcional)</span></label>
+        <input id="lugar-web" type="url" inputmode="url" autocomplete="off"
+               placeholder="https://..." />
+
+        <fieldset class="fotos">
+          <legend>Foto</legend>
+          <button id="btn-buscar-foto" type="button" class="btn-secundario">🔍 Buscar foto en Wikipedia</button>
+          <p id="fotos-mensaje" class="ayuda-campo" hidden></p>
+          <div id="fotos-opciones" class="fotos-opciones"></div>
+        </fieldset>
+
+        <p id="lugar-error" class="form-error" role="alert" hidden></p>
+        <p id="lugar-creado" class="ayuda-campo"></p>
+
+        <div class="form-botones">
+          <button type="submit" class="btn-principal">Guardar</button>
+          <button id="btn-cancelar-lugar" type="button" class="btn-secundario">Cancelar</button>
+        </div>
+        <button id="btn-borrar-lugar" type="button" class="btn-quitar" hidden>🗑️ Borrar lugar</button>
+      </form>
+    </div>
+  </div>
+
   <!-- Aviso breve tras agregar/mover -->
   <div id="aviso" class="aviso" role="status" aria-live="polite"></div>
 
   <script src="data.js"></script>
+  <script src="semilla.js"></script>
   <script src="app.js"></script>
   <!-- Módulo de inicio de sesión (corre después de app.js) -->
   <script type="module" src="auth.js"></script>

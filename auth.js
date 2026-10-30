@@ -91,7 +91,13 @@ async function iniciar() {
       const snap = await getDoc(doc(db, "miembros", email));
       if (snap.exists() && usuario.emailVerified) {
         const datos = snap.data();
-        window.App.establecerSesion({ ...base, estado: "miembro", nombre: datos.nombre || base.nombre });
+        window.App.establecerSesion({
+          ...base,
+          estado: "miembro",
+          nombre: datos.nombre || base.nombre,
+          // Solo la UI lo usa para mostrar "Borrar"; las reglas lo hacen cumplir.
+          admin: datos.admin === true,
+        });
       } else {
         window.App.establecerSesion({ ...base, estado: "invitado" });
       }

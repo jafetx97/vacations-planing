@@ -1,85 +1,80 @@
 # 🧳 Vacaciones en Dallas
 
-Página web para mostrarles a mis papás la lista de lugares y actividades, con fotos
-y mapas, para que ellos elijan qué hacer cada día. Sin base de datos y sin login:
-todo se guarda en el propio navegador (localStorage).
+Página web para planear con la familia qué hacer cada día del viaje: lugares con
+fotos y mapas, votos con ❤️ y una agenda compartida que se actualiza en tiempo real
+en todos los celulares. Inicio de sesión con Google (Firebase).
+
+Publicada en https://vacations-planing.pamolitas.com (GitHub Pages).
 
 ## ¿Cómo se usa?
 
-- **Actividades**: tarjetas con foto por categoría. Toca ❤️ para marcar favoritos,
-  📍 para ver el mapa y **➕ Agregar al día** para elegir en qué día hacerlo.
-  Cada card muestra en qué días ya está agendada.
-- **Los días**: el calendario del 7 al 22. Solo la llegada (sáb 7) y la salida
-  (dom 22) vienen fijas. Las cards agendadas tienen **🔀 Mover / Quitar** para
-  cambiarlas de día o sacarlas del plan.
-- **Favoritos**: todo lo marcado con ❤️.
-- **Reiniciar**: borra las elecciones y empieza de cero.
+- **Actividades**: tarjetas con foto por categoría, en grupos que se abren y cierran.
+  - ❤️ para votar (se ve quién votó), 📍 para el mapa, 🌐 para el sitio web.
+  - **➕ Agregar al día** para agendarlo (tocar un día verde lo quita).
+  - **➕ Nuevo lugar** y ✏️ para agregar o editar lugares.
+- **Los días**: del 7 al 22. Solo la llegada (sáb 7) y la salida (dom 22) son fijas.
+  **🔀 Mover / Quitar** cambia una actividad de día o la saca del plan.
+- **❤️ Votos**: lo que la familia votó, del más votado al menos.
+- **Sin sesión**: se ve todo en modo solo lectura.
 
-## Cómo verlo en tu computadora
+## Permisos
 
-Solo abre `index.html` en el navegador. (Para que los mapas embebidos carguen bien,
-mejor servirlo con un servidor local, por ejemplo:)
+| Acción                         | Sin sesión | Miembro | Admin |
+|--------------------------------|:----------:|:-------:|:-----:|
+| Ver lugares, agenda y votos    | ✔          | ✔       | ✔     |
+| Votar (solo sus propios votos) |            | ✔       | ✔     |
+| Agendar / mover / quitar       |            | ✔       | ✔     |
+| Agregar y editar lugares       |            | ✔       | ✔     |
+| Borrar lugares                 |            |         | ✔     |
 
-```bash
-# Con Python
-python -m http.server 8000
-# luego abre http://localhost:8000
-```
+Esto lo hacen cumplir las reglas de Firestore (`firestore.rules`), no solo la interfaz.
 
-## Cómo publicarlo gratis (GitHub Pages)
+## Configuración de Firebase
 
-1. Sube estos archivos al repo.
-2. En GitHub: **Settings → Pages → Branch: main / root → Save**.
-3. En un par de minutos queda en `https://TU-USUARIO.github.io/vacations-planing/`.
-4. Comparte ese enlace o ábrelo en un celular/tablet para enseñárselo a tus papás.
-
-## Editar la lista
-
-Todo (lugares, fotos, mapas, días) está en **`data.js`**.
-
-**Fotos** — cada card elige su imagen en este orden:
-
-1. `foto`: tu propia foto (URL o ruta local, ej. `"img/tia-lola.jpg"`). Siempre gana.
-2. `wiki`: título del artículo en Wikipedia en inglés. La app descarga la foto
-   principal automáticamente (gratis, sin API key) y la guarda en caché 7 días.
-3. Si no hay ninguna, o la foto falla, se usa un placeholder de color con el nombre.
-
-**Mapa** — ajusta el texto del campo `mapa` (es lo que se busca en Google Maps).
-
-## Inicio de sesión (Firebase)
-
-- `firebase-config.js`: pega aquí el `firebaseConfig` de tu proyecto. Mientras diga
-  `PEGA_AQUI`, la app funciona en modo local, sin sesión.
-- `firestore.rules`: reglas de seguridad. Cópialas en Firestore → Reglas → Publicar.
-- **Quién puede editar:** colección `miembros` en Firestore. Cada documento tiene
-  como ID el correo en minúsculas (ej. `mama@gmail.com`) y un campo `nombre`
-  (ej. `"Mamá"`). Quien no esté ahí, o no inicie sesión, solo puede ver.
+- `firebase-config.js`: el `firebaseConfig` del proyecto. No es secreto. Mientras
+  diga `PEGA_AQUI`, la app funciona en modo local (sin sesión, con `localStorage`).
+- `firestore.rules`: cópialas en Firestore → Reglas → Publicar cada vez que cambien.
+- **Miembros:** colección `miembros`. ID del documento = correo en minúsculas
+  (ej. `mama@gmail.com`), campo `nombre` (string, ej. `"Mamá"`).
+- **Admin:** en tu documento de `miembros`, agrega el campo `admin` (boolean) = `true`.
 - Los correos no están en el código, porque el repo es público.
 
-## Sincronización (Firestore)
-
-La agenda y los votos viven en Firestore y se actualizan en tiempo real en todos los
-dispositivos (`nube.js`):
+## Datos en Firestore
 
 ```
+miembros/{correo}             → { nombre, admin? }
+viajes/dallas/lugares/{id}    → { nombre, categoria, mapa, mapsUrl, web, wiki,
+                                  creadoPor, creadoEn, actualizadoPor, actualizadoEn }
 viajes/dallas/agenda/{diaId}  → { lugares: [ids], actualizadoPor, actualizadoEn }
 viajes/dallas/votos/{uid}     → { nombre, lugares: [ids], actualizadoEn }
 ```
 
-- Cada miembro solo puede cambiar sus propios votos; la agenda la editan todos.
-- Funciona sin señal: los cambios se suben solos al reconectar.
-- Si un dispositivo tenía un plan guardado de antes, la app ofrece subirlo una vez.
-- Los lugares todavía salen de `data.js`.
+- Todo se sincroniza en tiempo real y funciona sin señal (se sube al reconectar).
+- La primera vez, el admin ve un botón para subir la lista original (`semilla.js`).
+- Si un navegador tenía un plan guardado de antes de la nube, la app ofrece subirlo una vez.
+
+**Fotos:** vienen de Wikipedia (gratis, sin API key). Al agregar un lugar, el
+formulario busca opciones por nombre y eliges una o "Sin foto". Se guardan en caché
+7 días. Si no hay foto, se usa un placeholder de color con el nombre.
+
+## Cómo verlo en tu computadora
+
+Necesita un servidor local (los módulos de JavaScript no funcionan abriendo el
+archivo directo):
+
+```bash
+python -m http.server 8000
+# luego abre http://localhost:8000
+```
 
 ## Archivos
 
 - `index.html` — estructura de la página
 - `styles.css` — estilos (mobile-first)
-- `data.js` — **los datos** (edita aquí)
-- `app.js` — la lógica (tabs, favoritos, drag & drop, guardado)
-
-## Nota sobre el guardado
-
-Las elecciones se guardan en el dispositivo donde se usan; no se sincronizan entre
-teléfonos. Ideal para verlo juntos en un solo celular o tablet. Si algún día se
-quiere que cada quien vote desde su propio teléfono, habría que añadir un backend.
+- `data.js` — categorías, grupos y días del viaje
+- `semilla.js` — la lista original de lugares (para subirla una vez)
+- `app.js` — la lógica de la interfaz
+- `auth.js` — inicio de sesión con Google y arranque de Firebase
+- `nube.js` — lectura y escritura en Firestore (tiempo real)
+- `firebase-config.js` — configuración del proyecto de Firebase
+- `firestore.rules` — reglas de seguridad

@@ -6,8 +6,10 @@ rules_version = '2';
 //  Consola de Firebase -> Firestore Database -> Reglas -> Publicar
 //
 //  - miembros/{correo}: la lista de la familia. Se edita SOLO desde
-//    la consola. Cada persona solo puede leer su propio documento,
-//    así nadie puede ver los correos de los demás.
+//    la consola. Cada persona solo puede leer su propio documento.
+//    Quien tenga el campo  admin: true  puede borrar lugares.
+//  - viajes/{viaje}/lugares/{id}: cualquiera lee; los miembros crean
+//    y editan; SOLO el admin borra.
 //  - viajes/{viaje}/agenda/{dia}: cualquiera lee; solo miembros escriben.
 //  - viajes/{viaje}/votos/{uid}: cualquiera lee; cada miembro solo
 //    puede escribir SU propio voto.
@@ -20,15 +22,58 @@ service cloud.firestore {
       return request.auth.token.email.lower();
     }
 
+    function rutaMiembro() {
+      return /databases/$(database)/documents/miembros/$(correo());
+    }
+
     function esMiembro() {
       return request.auth != null
         && request.auth.token.email_verified == true
-        && exists(/databases/$(database)/documents/miembros/$(correo()));
+        && exists(rutaMiembro());
+    }
+
+    function esAdmin() {
+      return esMiembro() && get(rutaMiembro()).data.get('admin', false) == true;
     }
 
     // Lista de lugares (ids) con un tamaño razonable.
     function listaValida(lista, maximo) {
       return lista is list && lista.size() <= maximo;
+    }
+
+    function textoValido(t, maximo) {
+      return t is string && t.size() <= maximo;
+    }
+
+    // Debe coincidir con CATEGORIAS en data.js.
+    function categoriaValida(c) {
+      return c in ['familia', 'actividades', 'desayunos', 'comida-rapida',
+                   'restaurantes', 'mexicano', 'casero', 'cenas'];
+    }
+
+    // Vacío, o un enlace https de Google Maps.
+    function mapsUrlValida(u) {
+      return u == '' || (u.size() <= 300 && u.matches(
+        '^https://(maps[.]app[.]goo[.]gl|goo[.]gl|(www[.])?google[.][a-z.]+|maps[.]google[.][a-z.]+)/.*'));
+    }
+
+    // Vacío, o un enlace http(s).
+    function webValida(u) {
+      return u == '' || (u.size() <= 300 && u.matches('^https?://[^ ]+$'));
+    }
+
+    function lugarValido(d) {
+      return d.keys().hasOnly(['nombre', 'categoria', 'mapa', 'mapsUrl', 'web', 'wiki',
+                               'creadoPor', 'creadoEn', 'actualizadoPor', 'actualizadoEn'])
+        && textoValido(d.nombre, 60) && d.nombre.size() > 0
+        && categoriaValida(d.categoria)
+        && textoValido(d.mapa, 120)
+        && textoValido(d.mapsUrl, 300) && mapsUrlValida(d.mapsUrl)
+        && textoValido(d.web, 300) && webValida(d.web)
+        && textoValido(d.wiki, 120)
+        && textoValido(d.creadoPor, 60)
+        && textoValido(d.actualizadoPor, 60)
+        && d.actualizadoEn == request.time;
     }
 
     match /miembros/{email} {
@@ -38,14 +83,27 @@ service cloud.firestore {
 
     match /viajes/{viajeId} {
 
+      match /lugares/{lugarId} {
+        allow read: if true;
+        allow create: if esMiembro()
+          && lugarId.matches('^[a-z0-9-]{1,60}$')
+          && lugarValido(request.resource.data)
+          && request.resource.data.creadoEn == request.time;
+        // Al editar no se puede cambiar quién ni cuándo lo creó.
+        allow update: if esMiembro()
+          && lugarValido(request.resource.data)
+          && request.resource.data.creadoPor == resource.data.creadoPor
+          && request.resource.data.creadoEn == resource.data.creadoEn;
+        allow delete: if esAdmin();
+      }
+
       match /agenda/{diaId} {
         allow read: if true;
         allow create, update: if esMiembro()
           && diaId.matches('^[a-z]{3}-[0-9]{1,2}$')
           && request.resource.data.keys().hasOnly(['lugares', 'actualizadoPor', 'actualizadoEn'])
           && listaValida(request.resource.data.lugares, 50)
-          && request.resource.data.actualizadoPor is string
-          && request.resource.data.actualizadoPor.size() <= 60
+          && textoValido(request.resource.data.actualizadoPor, 60)
           && request.resource.data.actualizadoEn == request.time;
         allow delete: if false;
       }
@@ -55,8 +113,7 @@ service cloud.firestore {
         allow create, update: if esMiembro()
           && request.auth.uid == uid
           && request.resource.data.keys().hasOnly(['nombre', 'lugares', 'actualizadoEn'])
-          && request.resource.data.nombre is string
-          && request.resource.data.nombre.size() <= 60
+          && textoValido(request.resource.data.nombre, 60)
           && listaValida(request.resource.data.lugares, 300)
           && request.resource.data.actualizadoEn == request.time;
         allow delete: if false;
