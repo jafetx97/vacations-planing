@@ -6,11 +6,12 @@ todo se guarda en el propio navegador (localStorage).
 
 ## ¿Cómo se usa?
 
-- **Actividades**: tarjetas con foto por categoría. Toca ❤️ para marcar favoritos
-  y 📍 para ver el mapa. Mantén presionada una tarjeta y arrástrala a un día.
-- **Los días**: el calendario del 7 al 22 con los eventos fijos ya puestos
-  (Mavericks, Cowboys, Espadas, llegada y salida). Arrastra actividades a cada día,
-  muévelas entre días o suéltalas en la papelera 🗑️ para quitarlas.
+- **Actividades**: tarjetas con foto por categoría. Toca ❤️ para marcar favoritos,
+  📍 para ver el mapa y **➕ Agregar al día** para elegir en qué día hacerlo.
+  Cada card muestra en qué días ya está agendada.
+- **Los días**: el calendario del 7 al 22. Solo la llegada (sáb 7) y la salida
+  (dom 22) vienen fijas. Las cards agendadas tienen **🔀 Mover / Quitar** para
+  cambiarlas de día o sacarlas del plan.
 - **Favoritos**: todo lo marcado con ❤️.
 - **Reiniciar**: borra las elecciones y empieza de cero.
 
@@ -34,9 +35,16 @@ python -m http.server 8000
 
 ## Editar la lista
 
-Todo (lugares, fotos, mapas, días) está en **`data.js`**. Para cambiar una foto,
-reemplaza la URL del campo `foto`. Para cambiar el mapa, ajusta el texto del campo
-`mapa` (es lo que se busca en Google Maps).
+Todo (lugares, fotos, mapas, días) está en **`data.js`**.
+
+**Fotos** — cada card elige su imagen en este orden:
+
+1. `foto`: tu propia foto (URL o ruta local, ej. `"img/tia-lola.jpg"`). Siempre gana.
+2. `wiki`: título del artículo en Wikipedia en inglés. La app descarga la foto
+   principal automáticamente (gratis, sin API key) y la guarda en caché 7 días.
+3. Si no hay ninguna, o la foto falla, se usa un placeholder de color con el nombre.
+
+**Mapa** — ajusta el texto del campo `mapa` (es lo que se busca en Google Maps).
 
 ## Archivos
 

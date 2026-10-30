@@ -27,8 +27,8 @@
     <!-- VISTA: ACTIVIDADES -->
     <section id="vista-actividades" class="vista activa">
       <p class="ayuda">
-        Toca ❤️ para marcar lo que te gusta. Mantén presionada una tarjeta y
-        arrástrala a <strong>Los días</strong> para agendarla.
+        Toca ❤️ para marcar lo que te gusta y <strong>➕ Agregar al día</strong>
+        para agendarlo.
       </p>
       <div id="categorias"></div>
     </section>
@@ -36,8 +36,8 @@
     <!-- VISTA: DÍAS -->
     <section id="vista-dias" class="vista">
       <p class="ayuda">
-        Arrastra actividades desde <strong>Actividades</strong> o muévelas entre
-        días. Para quitar una, arrástrala a la papelera 🗑️ de abajo.
+        Usa <strong>🔀 Mover / Quitar</strong> en cada card para cambiarla de día
+        o sacarla del plan.
       </p>
       <div id="dias"></div>
     </section>
@@ -49,12 +49,12 @@
     </section>
   </main>
 
-  <!-- Papelera para quitar actividades de un día (aparece al arrastrar) -->
-  <div id="papelera" class="papelera" aria-hidden="true">🗑️ Soltar aquí para quitar</div>
-
   <footer class="app-footer">
     <button id="btn-reiniciar" class="btn-reiniciar">↺ Reiniciar todo</button>
-    <p class="nota">Tus elecciones se guardan en este dispositivo.</p>
+    <p class="nota">
+      Tus elecciones se guardan en este dispositivo · Fotos:
+      <a href="https://commons.wikimedia.org" target="_blank" rel="noopener">Wikimedia Commons</a>
+    </p>
   </footer>
 
   <!-- Modal del mapa -->
@@ -67,8 +67,20 @@
     </div>
   </div>
 
-  <!-- Librería de drag & drop (táctil + escritorio), desde CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+  <!-- Modal para elegir día (agregar o mover) -->
+  <div id="modal-dia" class="modal" aria-hidden="true">
+    <div class="modal-caja" role="dialog" aria-modal="true" aria-labelledby="modal-dia-titulo">
+      <button class="modal-cerrar" aria-label="Cerrar">✕</button>
+      <h3 id="modal-dia-titulo"></h3>
+      <p id="modal-dia-sub" class="modal-sub"></p>
+      <div id="modal-dia-opciones" class="dias-opciones"></div>
+      <button id="btn-quitar-dia" class="btn-quitar">🗑️ Quitar de este día</button>
+    </div>
+  </div>
+
+  <!-- Aviso breve tras agregar/mover -->
+  <div id="aviso" class="aviso" role="status" aria-live="polite"></div>
+
   <script src="data.js"></script>
   <script src="app.js"></script>
 </body>
