@@ -8,8 +8,9 @@ rules_version = '2';
 //  - miembros/{correo}: la lista de la familia. Se edita SOLO desde
 //    la consola. Cada persona solo puede leer su propio documento,
 //    así nadie puede ver los correos de los demás.
-//  - viajes/...: cualquiera puede leer (modo solo lectura sin sesión),
-//    pero solo los miembros pueden escribir. (Se usa en la etapa 2.)
+//  - viajes/{viaje}/agenda/{dia}: cualquiera lee; solo miembros escriben.
+//  - viajes/{viaje}/votos/{uid}: cualquiera lee; cada miembro solo
+//    puede escribir SU propio voto.
 //  - Todo lo demás: bloqueado.
 // ============================================================
 service cloud.firestore {
@@ -25,14 +26,41 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/miembros/$(correo()));
     }
 
+    // Lista de lugares (ids) con un tamaño razonable.
+    function listaValida(lista, maximo) {
+      return lista is list && lista.size() <= maximo;
+    }
+
     match /miembros/{email} {
       allow read: if request.auth != null && correo() == email;
       allow write: if false;
     }
 
-    match /viajes/{viajeId}/{documento=**} {
-      allow read: if true;
-      allow write: if esMiembro();
+    match /viajes/{viajeId} {
+
+      match /agenda/{diaId} {
+        allow read: if true;
+        allow create, update: if esMiembro()
+          && diaId.matches('^[a-z]{3}-[0-9]{1,2}$')
+          && request.resource.data.keys().hasOnly(['lugares', 'actualizadoPor', 'actualizadoEn'])
+          && listaValida(request.resource.data.lugares, 50)
+          && request.resource.data.actualizadoPor is string
+          && request.resource.data.actualizadoPor.size() <= 60
+          && request.resource.data.actualizadoEn == request.time;
+        allow delete: if false;
+      }
+
+      match /votos/{uid} {
+        allow read: if true;
+        allow create, update: if esMiembro()
+          && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['nombre', 'lugares', 'actualizadoEn'])
+          && request.resource.data.nombre is string
+          && request.resource.data.nombre.size() <= 60
+          && listaValida(request.resource.data.lugares, 300)
+          && request.resource.data.actualizadoEn == request.time;
+        allow delete: if false;
+      }
     }
   }
 }

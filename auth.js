@@ -5,6 +5,7 @@
 //    "miembros" de Firestore, puede editar. Si no, solo lectura.
 // ============================================================
 import { firebaseConfig } from "./firebase-config.js";
+import { iniciarNube } from "./nube.js";
 
 const VERSION_SDK = "13.1.0";
 const CDN = `https://www.gstatic.com/firebasejs/${VERSION_SDK}`;
@@ -30,12 +31,28 @@ async function iniciar() {
     import(`${CDN}/firebase-firestore.js`),
   ]);
   const { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut } = authMod;
-  const { getFirestore, doc, getDoc } = fsMod;
+  const {
+    getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
+    doc, getDoc,
+  } = fsMod;
 
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
   auth.languageCode = "es";
-  const db = getFirestore(app);
+
+  // Caché en el dispositivo: la app funciona sin señal y sincroniza después.
+  let db;
+  try {
+    db = initializeFirestore(app, {
+      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+    });
+  } catch (e) {
+    console.warn("Sin caché offline, usando Firestore normal:", e);
+    db = getFirestore(app);
+  }
+
+  // Agenda y votos en tiempo real (se pueden leer aun sin sesión).
+  window.App.usarNube(iniciarNube(db, fsMod));
 
   const proveedor = new GoogleAuthProvider();
   // Útil en celulares compartidos: siempre pregunta qué cuenta usar.

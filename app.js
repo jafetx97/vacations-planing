@@ -1,51 +1,89 @@
 // ============================================================
 //  Lógica de la app
-//  - Pinta tarjetas, días y favoritos
+//  - Pinta tarjetas, días y votos
 //  - Botón "Agregar al día" / "Mover / Quitar" con selector de día
-//  - Guarda todo en localStorage (sin servidor, sin login)
+//  - Con Firebase: agenda y votos en Firestore, en tiempo real (nube.js)
+//  - Sin Firebase (modo local): todo en localStorage, como antes
 // ============================================================
 
 const CLAVE_GUARDADO = "vacaciones-dallas-v1";
+const CLAVE_MIGRACION = "vacaciones-dallas-migrado";
 
-// Estado: qué está en cada día + qué es favorito.
-// { agenda: { "dom-8": ["mavericks", ...], ... }, favoritos: ["ihop", ...] }
-let estado = cargarEstado();
-
-function cargarEstado() {
+function estadoVacio() {
   const agenda = {};
   DIAS.forEach((d) => (agenda[d.id] = []));
-  let favoritos = [];
+  return { agenda, favoritos: [] };
+}
 
+// Plan guardado en este navegador (modo local, o para migrarlo a la nube).
+function cargarEstadoLocal() {
+  const est = estadoVacio();
   try {
     const guardado = JSON.parse(localStorage.getItem(CLAVE_GUARDADO));
     if (guardado && guardado.agenda && Array.isArray(guardado.favoritos)) {
       // Solo conservamos días y lugares que todavía existen.
       DIAS.forEach((d) => {
-        agenda[d.id] = (guardado.agenda[d.id] || []).filter((id) => LUGARES_POR_ID[id]);
+        est.agenda[d.id] = (guardado.agenda[d.id] || []).filter((id) => LUGARES_POR_ID[id]);
       });
-      favoritos = guardado.favoritos.filter((id) => LUGARES_POR_ID[id]);
+      est.favoritos = guardado.favoritos.filter((id) => LUGARES_POR_ID[id]);
     }
   } catch (e) {
     /* si está corrupto, empezamos limpio */
   }
-  return { agenda, favoritos };
+  return est;
 }
 
-function guardar() {
+function guardarLocal() {
   localStorage.setItem(CLAVE_GUARDADO, JSON.stringify(estado));
 }
+
+// Estado que se pinta. En modo nube, "agenda" viene de Firestore y
+// "favoritos" no se usa (se usan los votos por persona).
+let estado = estadoVacio();
+
+// ---------- Nube ----------
+let nube = null;            // API de nube.js cuando Firebase está activo
+let votos = {};             // { uid: { nombre, lugares: [ids] } }
+let agendaDelServidor = false;
 
 // ---------- Sesión ----------
 // Hasta que auth.js diga lo contrario, la app arranca en solo lectura.
 let sesion = { estado: "cargando" };
 let puedeEditar = false;
 
+const quienSoy = () => ({ uid: sesion.uid, nombre: sesion.nombre });
+
 // ---------- Utilidades ----------
 const $ = (sel, raiz = document) => raiz.querySelector(sel);
 const $$ = (sel, raiz = document) => [...raiz.querySelectorAll(sel)];
 
+// Para textos que vienen de la base de datos (nombres de quien vota).
+function escapar(texto) {
+  return String(texto).replace(/[&<>"']/g, (c) => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+  ));
+}
+
+// ¿Yo voté por este lugar?
 function esFavorito(id) {
+  if (nube) {
+    const mio = sesion.uid && votos[sesion.uid];
+    return Boolean(mio && mio.lugares.includes(id));
+  }
   return estado.favoritos.includes(id);
+}
+
+// Nombres de quienes votaron por este lugar (solo modo nube).
+function votantesDe(id) {
+  if (!nube) return [];
+  return Object.values(votos)
+    .filter((v) => v.lugares.includes(id))
+    .map((v) => v.nombre)
+    .sort((a, b) => a.localeCompare(b, "es"));
+}
+
+function totalVotos(id) {
+  return nube ? votantesDe(id).length : (esFavorito(id) ? 1 : 0);
 }
 
 // Días en los que ya está agendado un lugar (en orden del viaje).
@@ -60,20 +98,27 @@ function refrescarTodo() {
 }
 
 // ============================================================
-//  TARJETA (la misma en Actividades, Los días y Favoritos)
+//  TARJETA (la misma en Actividades, Los días y Votos)
 //  diaId: si viene, la card está dentro de ese día -> "Mover / Quitar"
 // ============================================================
 function crearTarjeta(lugar, diaId = null) {
   const fav = esFavorito(lugar.id);
+  const total = totalVotos(lugar.id);
+  const votantes = votantesDe(lugar.id);
   const agendado = diasDeLugar(lugar.id);
 
   const el = document.createElement("div");
   el.className = "tarjeta";
   el.dataset.id = lugar.id;
 
-  // En Actividades/Favoritos mostramos en qué días ya está.
+  // En Actividades/Votos mostramos en qué días ya está.
   const etiquetas = !diaId && agendado.length
     ? `<div class="agendado">📅 ${agendado.map((d) => d.corto).join(", ")}</div>`
+    : "";
+
+  // Quién votó (los nombres vienen de Firestore: se escapan).
+  const lineaVotos = votantes.length
+    ? `<div class="votantes" title="${escapar(votantes.join(", "))}">❤️ ${votantes.map(escapar).join(", ")}</div>`
     : "";
 
   // En modo solo lectura no hay botones para votar ni agendar.
@@ -83,12 +128,13 @@ function crearTarjeta(lugar, diaId = null) {
       ? `<button class="dia-btn mover" data-id="${lugar.id}" data-dia="${diaId}">🔀 Mover / Quitar</button>`
       : `<button class="dia-btn" data-id="${lugar.id}">➕ Agregar al día</button>`;
 
+  const conteo = nube && total ? ` ${total}` : "";
   const botonFav = !puedeEditar
-    ? (fav ? `<span class="fav-solo" aria-label="Favorito">❤️</span>` : "")
+    ? (total ? `<span class="fav-solo" aria-label="${total} voto${total > 1 ? "s" : ""}">❤️${conteo}</span>` : "")
     : `<button class="fav-btn ${fav ? "activo" : ""}" data-id="${lugar.id}"
-               aria-label="${fav ? "Quitar de favoritos" : "Marcar como favorito"}"
+               aria-label="${fav ? "Quitar mi voto" : "Votar por este lugar"}${total ? ` (${total} voto${total > 1 ? "s" : ""})` : ""}"
                aria-pressed="${fav}">
-         ${fav ? "❤️" : "🤍"}
+         ${fav ? "❤️" : "🤍"}${conteo}
        </button>`;
 
   el.innerHTML = `
@@ -96,6 +142,7 @@ function crearTarjeta(lugar, diaId = null) {
     <div class="cuerpo">
       <div class="nombre">${lugar.nombre}</div>
       ${etiquetas}
+      ${lineaVotos}
       <div class="acciones">
         ${botonFav}
         ${lugar.mapa ? `<button class="mapa-btn" data-id="${lugar.id}">📍 Mapa</button>` : ""}
@@ -282,45 +329,68 @@ function pintarDias() {
 }
 
 // ============================================================
-//  VISTA: FAVORITOS
+//  VISTA: VOTOS (pestaña "favoritos")
 // ============================================================
 function pintarFavoritos() {
   const cont = $("#favoritos");
-  if (estado.favoritos.length === 0) {
-    cont.innerHTML = `<p class="vacio">Aún no hay favoritos.<br>Toca 🤍 en las actividades que te gusten.</p>`;
+
+  // Modo nube: todo lo que tenga al menos un voto, del más votado al menos.
+  // Modo local: mis favoritos, en el orden en que los marqué.
+  const ids = nube
+    ? Object.keys(LUGARES_POR_ID)
+        .filter((id) => totalVotos(id) > 0)
+        .sort((a, b) => totalVotos(b) - totalVotos(a))
+    : estado.favoritos;
+
+  if (ids.length === 0) {
+    cont.innerHTML = `<p class="vacio">Aún no hay votos.<br>Toca 🤍 en las actividades que te gusten.</p>`;
     return;
   }
   cont.innerHTML = '<div class="grid"></div>';
   const grid = $(".grid", cont);
-  estado.favoritos.forEach((id) => grid.appendChild(crearTarjeta(LUGARES_POR_ID[id])));
+  ids.forEach((id) => grid.appendChild(crearTarjeta(LUGARES_POR_ID[id])));
 }
 
 // ============================================================
-//  FAVORITOS: toggle
+//  CAMBIOS (votos y agenda)
+//  En modo nube se mandan a Firestore; la pantalla se actualiza sola
+//  cuando llega el cambio (al instante, incluso sin señal).
 // ============================================================
+function errorAlGuardar(err) {
+  console.error("No se pudo guardar:", err);
+  avisar(err && err.code === "permission-denied"
+    ? "No tienes permiso para hacer cambios."
+    : "No se pudo guardar. Intenta de nuevo.");
+}
+
 function alternarFavorito(id) {
   if (!puedeEditar) return;
+  if (nube) {
+    nube.votar(id, !esFavorito(id), quienSoy()).catch(errorAlGuardar);
+    return;
+  }
   const i = estado.favoritos.indexOf(id);
   if (i >= 0) estado.favoritos.splice(i, 1);
   else estado.favoritos.push(id);
-  guardar();
+  guardarLocal();
+  refrescarTodo();
+}
+
+// Quitar de un día y/o agregar a otro (mover = las dos cosas a la vez).
+function cambiarAgenda(lugarId, { quitarDe = null, agregarA = null }) {
+  if (nube) {
+    nube.cambiarAgenda(lugarId, quitarDe, agregarA, quienSoy()).catch(errorAlGuardar);
+    return;
+  }
+  if (quitarDe) estado.agenda[quitarDe] = estado.agenda[quitarDe].filter((id) => id !== lugarId);
+  if (agregarA && !estado.agenda[agregarA].includes(lugarId)) estado.agenda[agregarA].push(lugarId);
+  guardarLocal();
   refrescarTodo();
 }
 
 // ============================================================
-//  AGENDA: agregar / mover / quitar
-// ============================================================
-function agregarADia(lugarId, diaId) {
-  if (!estado.agenda[diaId].includes(lugarId)) estado.agenda[diaId].push(lugarId);
-}
-
-function quitarDeDia(lugarId, diaId) {
-  estado.agenda[diaId] = estado.agenda[diaId].filter((id) => id !== lugarId);
-}
-
-// ============================================================
 //  MODAL: ELEGIR DÍA
-//  modo "agregar": desde Actividades/Favoritos
+//  modo "agregar": desde Actividades/Votos
 //  modo "mover":   desde una card que ya está en un día
 // ============================================================
 const modalDia = $("#modal-dia");
@@ -372,32 +442,24 @@ function elegirDia(diaId) {
   if (!seleccion || !puedeEditar) return;
   const { lugarId, diaOrigen } = seleccion;
   const lugar = LUGARES_POR_ID[lugarId];
+  cerrarModal(modalDia);
 
   // Modo agregar + día donde ya está -> quitarlo de ese día.
   if (!diaOrigen && estado.agenda[diaId].includes(lugarId)) {
-    quitarDeDia(lugarId, diaId);
-    guardar();
-    cerrarModal(modalDia);
-    refrescarTodo();
+    cambiarAgenda(lugarId, { quitarDe: diaId });
     avisar(`Quitado del ${DIAS_POR_ID[diaId].etiqueta}: ${lugar.nombre}`);
     return;
   }
 
-  if (diaOrigen) quitarDeDia(lugarId, diaOrigen);
-  agregarADia(lugarId, diaId);
-  guardar();
-  cerrarModal(modalDia);
-  refrescarTodo();
+  cambiarAgenda(lugarId, { quitarDe: diaOrigen, agregarA: diaId });
   avisar(`${diaOrigen ? "Movido" : "Agregado"}: ${lugar.nombre} → ${DIAS_POR_ID[diaId].etiqueta}`);
 }
 
 function quitarSeleccion() {
   if (!seleccion || !seleccion.diaOrigen || !puedeEditar) return;
   const { lugarId, diaOrigen } = seleccion;
-  quitarDeDia(lugarId, diaOrigen);
-  guardar();
   cerrarModal(modalDia);
-  refrescarTodo();
+  cambiarAgenda(lugarId, { quitarDe: diaOrigen });
   avisar(`Quitado del ${DIAS_POR_ID[diaOrigen].etiqueta}: ${LUGARES_POR_ID[lugarId].nombre}`);
 }
 
@@ -447,10 +509,13 @@ function establecerSesion(nueva) {
   sesion = nueva;
   // "local" = Firebase sin configurar: se puede editar como antes.
   puedeEditar = sesion.estado === "miembro" || sesion.estado === "local";
+  if (sesion.estado === "local") estado = cargarEstadoLocal();
   pintarSesion();
   if (!puedeEditar) $$(".modal.abierto").forEach(cerrarModal);
-  $("#btn-reiniciar").hidden = !puedeEditar;
+  // "Reiniciar" solo en modo local: en la nube borraría el plan de todos.
+  $("#btn-reiniciar").hidden = !puedeEditar || Boolean(nube);
   refrescarTodo();
+  revisarMigracion();
 }
 
 function pintarSesion() {
@@ -512,8 +577,60 @@ function pintarSesion() {
   aviso.hidden = !mensajeLectura;
 }
 
-// auth.js (módulo) se comunica con la app por aquí.
-window.App = { establecerSesion };
+// ============================================================
+//  NUBE (la llama nube.js, a través de auth.js)
+// ============================================================
+function usarNube(api) {
+  nube = api;
+  estado = estadoVacio(); // la agenda llega de Firestore en un momento
+  $("#btn-reiniciar").hidden = true;
+  refrescarTodo();
+}
+
+function actualizarAgenda(agendaNube, desdeServidor) {
+  DIAS.forEach((d) => {
+    estado.agenda[d.id] = (agendaNube[d.id] || []).filter((id) => LUGARES_POR_ID[id]);
+  });
+  if (desdeServidor) agendaDelServidor = true;
+  refrescarTodo();
+  revisarMigracion();
+}
+
+function actualizarVotos(nuevos) {
+  votos = nuevos;
+  refrescarTodo();
+}
+
+function errorNube(err) {
+  console.error("Error de sincronización:", err);
+  avisar("No se pudo sincronizar. Revisa tu conexión.");
+}
+
+// Una sola vez por dispositivo: si había un plan guardado en este
+// navegador (de antes de la nube), ofrecemos subirlo. Se SUMA a lo que haya.
+function revisarMigracion() {
+  if (!nube || sesion.estado !== "miembro" || !agendaDelServidor) return;
+  if (localStorage.getItem(CLAVE_MIGRACION)) return;
+  localStorage.setItem(CLAVE_MIGRACION, "1"); // no volver a preguntar
+
+  const local = cargarEstadoLocal();
+  const actividades = Object.values(local.agenda).reduce((n, a) => n + a.length, 0);
+  const favoritos = local.favoritos.length;
+  if (!actividades && !favoritos) return;
+
+  const ok = confirm(
+    `Encontré un plan guardado en este dispositivo ` +
+    `(${actividades} en la agenda y ${favoritos} favoritos).\n\n` +
+    `¿Lo subo para que lo vea toda la familia? Se suma a lo que ya haya.`
+  );
+  if (!ok) return;
+  nube.importar(local, quienSoy())
+    .then(() => avisar("Plan subido a la nube ✔"))
+    .catch(errorAlGuardar);
+}
+
+// auth.js y nube.js (módulos) se comunican con la app por aquí.
+window.App = { establecerSesion, usarNube, actualizarAgenda, actualizarVotos, errorNube };
 
 // ============================================================
 //  NAVEGACIÓN ENTRE VISTAS (tabs)
@@ -555,10 +672,11 @@ document.addEventListener("click", (e) => {
     return;
   }
 
+  // Solo existe en modo local.
   if (t.closest("#btn-reiniciar")) {
-    if (puedeEditar && confirm("¿Borrar todas las elecciones y empezar de cero?")) {
+    if (puedeEditar && !nube && confirm("¿Borrar todas las elecciones y empezar de cero?")) {
       localStorage.removeItem(CLAVE_GUARDADO);
-      estado = cargarEstado();
+      estado = estadoVacio();
       refrescarTodo();
       pintarFavoritos();
     }

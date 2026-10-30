@@ -56,6 +56,21 @@ Todo (lugares, fotos, mapas, días) está en **`data.js`**.
   (ej. `"Mamá"`). Quien no esté ahí, o no inicie sesión, solo puede ver.
 - Los correos no están en el código, porque el repo es público.
 
+## Sincronización (Firestore)
+
+La agenda y los votos viven en Firestore y se actualizan en tiempo real en todos los
+dispositivos (`nube.js`):
+
+```
+viajes/dallas/agenda/{diaId}  → { lugares: [ids], actualizadoPor, actualizadoEn }
+viajes/dallas/votos/{uid}     → { nombre, lugares: [ids], actualizadoEn }
+```
+
+- Cada miembro solo puede cambiar sus propios votos; la agenda la editan todos.
+- Funciona sin señal: los cambios se suben solos al reconectar.
+- Si un dispositivo tenía un plan guardado de antes, la app ofrece subirlo una vez.
+- Los lugares todavía salen de `data.js`.
+
 ## Archivos
 
 - `index.html` — estructura de la página
