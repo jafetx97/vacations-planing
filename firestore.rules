@@ -7,12 +7,15 @@ rules_version = '2';
 //
 //  - miembros/{correo}: la lista de la familia. Se edita SOLO desde
 //    la consola. Cada persona solo puede leer su propio documento.
-//    Quien tenga el campo  admin: true  puede borrar lugares.
+//    Quien tenga el campo  admin: true  es administrador.
+//  - viajes/{viaje}: la configuración del viaje activo (nombre, ciudad,
+//    fechas). Cualquiera lee; SOLO el admin la escribe (reiniciar viaje).
 //  - viajes/{viaje}/lugares/{id}: cualquiera lee; los miembros crean
 //    y editan; SOLO el admin borra.
-//  - viajes/{viaje}/agenda/{dia}: cualquiera lee; solo miembros escriben.
+//  - viajes/{viaje}/agenda/{fecha}: cualquiera lee; los miembros escriben,
+//    pero solo en fechas dentro del viaje. SOLO el admin borra.
 //  - viajes/{viaje}/votos/{uid}: cualquiera lee; cada miembro solo
-//    puede escribir SU propio voto.
+//    escribe SU propio voto. SOLO el admin borra.
 //  - Todo lo demás: bloqueado.
 // ============================================================
 service cloud.firestore {
@@ -43,6 +46,11 @@ service cloud.firestore {
 
     function textoValido(t, maximo) {
       return t is string && t.size() <= maximo;
+    }
+
+    // Fecha ISO "2026-11-23". (Que sea una fecha real lo valida la app.)
+    function fechaValida(f) {
+      return f is string && f.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
     }
 
     // Debe coincidir con CATEGORIAS en data.js.
@@ -76,12 +84,32 @@ service cloud.firestore {
         && d.actualizadoEn == request.time;
     }
 
+    // Configuración del viaje. El orden de las fechas se compara como
+    // texto (en formato ISO funciona igual que comparar fechas).
+    function viajeValido(d) {
+      return d.keys().hasOnly(['nombre', 'ciudad', 'inicio', 'fin', 'llegada', 'salida',
+                               'actualizadoPor', 'actualizadoEn'])
+        && textoValido(d.nombre, 60) && d.nombre.size() > 0
+        && textoValido(d.ciudad, 60)
+        && fechaValida(d.inicio)
+        && fechaValida(d.fin)
+        && d.inicio <= d.fin
+        && textoValido(d.llegada, 60)
+        && textoValido(d.salida, 60)
+        && textoValido(d.actualizadoPor, 60)
+        && d.actualizadoEn == request.time;
+    }
+
     match /miembros/{email} {
       allow read: if request.auth != null && correo() == email;
       allow write: if false;
     }
 
     match /viajes/{viajeId} {
+
+      allow read: if true;
+      allow create, update: if esAdmin() && viajeValido(request.resource.data);
+      allow delete: if false;
 
       match /lugares/{lugarId} {
         allow read: if true;
@@ -99,13 +127,16 @@ service cloud.firestore {
 
       match /agenda/{diaId} {
         allow read: if true;
+        // Solo fechas dentro del viaje configurado.
         allow create, update: if esMiembro()
-          && diaId.matches('^[a-z]{3}-[0-9]{1,2}$')
+          && fechaValida(diaId)
+          && diaId >= get(/databases/$(database)/documents/viajes/$(viajeId)).data.inicio
+          && diaId <= get(/databases/$(database)/documents/viajes/$(viajeId)).data.fin
           && request.resource.data.keys().hasOnly(['lugares', 'actualizadoPor', 'actualizadoEn'])
           && listaValida(request.resource.data.lugares, 50)
           && textoValido(request.resource.data.actualizadoPor, 60)
           && request.resource.data.actualizadoEn == request.time;
-        allow delete: if false;
+        allow delete: if esAdmin();
       }
 
       match /votos/{uid} {
@@ -116,7 +147,7 @@ service cloud.firestore {
           && textoValido(request.resource.data.nombre, 60)
           && listaValida(request.resource.data.lugares, 300)
           && request.resource.data.actualizadoEn == request.time;
-        allow delete: if false;
+        allow delete: if esAdmin();
       }
     }
   }

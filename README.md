@@ -12,10 +12,16 @@ Publicada en https://vacations-planing.pamolitas.com (GitHub Pages).
   - ❤️ para votar (se ve quién votó), 📍 para el mapa, 🌐 para el sitio web.
   - **➕ Agregar al día** para agendarlo (tocar un día verde lo quita).
   - **➕ Nuevo lugar** y ✏️ para agregar o editar lugares.
-- **Los días**: del 7 al 22. Solo la llegada (sáb 7) y la salida (dom 22) son fijas.
-  **🔀 Mover / Quitar** cambia una actividad de día o la saca del plan.
+- **Los días**: un bloque por cada día del viaje. El primero y el último pueden llevar
+  una nota fija (llegada, salida). **🔀 Mover / Quitar** cambia una actividad de día o
+  la saca del plan.
 - **❤️ Votos**: lo que la familia votó, del más votado al menos.
 - **Sin sesión**: se ve todo en modo solo lectura.
+- **↺ Reiniciar viaje** (solo admin, arriba a la derecha): para reutilizar el sitio con
+  otro viaje. Pide nombre, ciudad y fechas de inicio y fin (máximo 60 días), y borra la
+  agenda y los votos del viaje anterior. Los lugares se borran también, a menos que
+  marques "Conservar la lista de lugares actual". Los días de la pestaña "Los días"
+  se generan solos a partir de esas fechas. No se guarda historial de viajes.
 
 ## Permisos
 
@@ -26,6 +32,7 @@ Publicada en https://vacations-planing.pamolitas.com (GitHub Pages).
 | Agendar / mover / quitar       |            | ✔       | ✔     |
 | Agregar y editar lugares       |            | ✔       | ✔     |
 | Borrar lugares                 |            |         | ✔     |
+| Configurar / reiniciar el viaje|            |         | ✔     |
 
 Esto lo hacen cumplir las reglas de Firestore (`firestore.rules`), no solo la interfaz.
 
@@ -43,15 +50,20 @@ Esto lo hacen cumplir las reglas de Firestore (`firestore.rules`), no solo la in
 
 ```
 miembros/{correo}             → { nombre, admin? }
+viajes/dallas                 → { nombre, ciudad, inicio, fin, llegada, salida,
+                                  actualizadoPor, actualizadoEn }   (el viaje activo)
 viajes/dallas/lugares/{id}    → { nombre, categoria, mapa, mapsUrl, web, wiki,
                                   creadoPor, creadoEn, actualizadoPor, actualizadoEn }
-viajes/dallas/agenda/{diaId}  → { lugares: [ids], actualizadoPor, actualizadoEn }
+viajes/dallas/agenda/{fecha}  → { lugares: [ids], actualizadoPor, actualizadoEn }
+                                  (fecha = "2026-11-23", dentro del rango del viaje)
 viajes/dallas/votos/{uid}     → { nombre, lugares: [ids], actualizadoEn }
 ```
 
+- `dallas` es solo el ID interno del documento, no el nombre del viaje (ese está en
+  el campo `nombre` y se cambia desde la app).
 - Todo se sincroniza en tiempo real y funciona sin señal (se sube al reconectar).
-- La primera vez, el admin ve un botón para subir la lista original (`semilla.js`).
-- Si un navegador tenía un plan guardado de antes de la nube, la app ofrece subirlo una vez.
+- Mientras no exista el documento del viaje, el admin ve "Configurar viaje" y los demás
+  ven que todavía no está configurado.
 
 **Fotos:** vienen de Wikipedia (gratis, sin API key). Al agregar un lugar, el
 formulario busca opciones por nombre y eliges una o "Sin foto". Se guardan en caché
@@ -71,8 +83,8 @@ python -m http.server 8000
 
 - `index.html` — estructura de la página
 - `styles.css` — estilos (mobile-first)
-- `data.js` — categorías, grupos y días del viaje
-- `semilla.js` — la lista original de lugares (para subirla una vez)
+- `data.js` — categorías, grupos y el cálculo de los días a partir de las fechas
+- `semilla.js` — la lista original de lugares de Dallas (referencia y modo local)
 - `app.js` — la lógica de la interfaz
 - `auth.js` — inicio de sesión con Google y arranque de Firebase
 - `nube.js` — lectura y escritura en Firestore (tiempo real)

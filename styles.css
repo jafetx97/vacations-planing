@@ -614,3 +614,53 @@ main { padding: 16px; max-width: 900px; margin: 0 auto; }
 }
 .form-botones { display: flex; gap: 8px; margin-top: 16px; }
 .form-botones .btn-principal { flex: 1; }
+
+/* ============================================================
+   Viaje: botón de reinicio (admin) y formulario de fechas
+   ============================================================ */
+.btn-viaje {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 0.72rem;
+  padding: 5px 10px;
+  border-radius: 14px;
+  cursor: pointer;
+}
+.btn-viaje:hover { background: rgba(255, 255, 255, 0.32); }
+.btn-viaje:focus-visible { outline: 3px solid #2c3e50; outline-offset: 2px; }
+/* Deja espacio arriba para que el botón no tape el título */
+.app-header:has(.btn-viaje:not([hidden])) { padding-top: 38px; }
+
+.viaje-aviso {
+  margin: -4px 0 14px;
+  font-size: 0.85rem;
+  color: #a93226;
+  background: #fdecea;
+  border-radius: 10px;
+  padding: 9px 12px;
+}
+#modal-viaje .modal-caja { max-height: 92vh; overflow-y: auto; }
+.fechas-fila { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.fechas-fila label { margin-top: 12px; }
+.check-fila {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0 0;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.form-lugar .check-fila input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  flex: 0 0 auto;
+  accent-color: var(--naranja);
+}

@@ -1,10 +1,15 @@
 // ============================================================
-//  SINCRONIZACIÓN CON FIRESTORE (agenda y votos en tiempo real)
+//  SINCRONIZACIÓN CON FIRESTORE (todo en tiempo real)
 //
-//  viajes/{VIAJE}/agenda/{diaId} -> { lugares: [ids], actualizadoPor, actualizadoEn }
+//  viajes/{VIAJE}                -> { nombre, ciudad, inicio, fin, llegada, salida,
+//                                     actualizadoPor, actualizadoEn }   (el viaje activo)
+//  viajes/{VIAJE}/agenda/{fecha} -> { lugares: [ids], actualizadoPor, actualizadoEn }
 //  viajes/{VIAJE}/votos/{uid}    -> { nombre, lugares: [ids], actualizadoEn }
 //  viajes/{VIAJE}/lugares/{id}   -> { nombre, categoria, mapa, mapsUrl, web, wiki,
 //                                     creadoPor, creadoEn, actualizadoPor, actualizadoEn }
+//
+//  VIAJE es solo el ID interno del documento: no es el nombre del viaje
+//  (ese está en el campo "nombre" y se cambia desde la app).
 //
 //  Usamos arrayUnion / arrayRemove para que dos personas puedan
 //  cambiar cosas al mismo tiempo sin borrarse lo de la otra.
@@ -14,13 +19,26 @@ const VIAJE = "dallas";
 
 export function iniciarNube(db, fs) {
   const {
-    collection, doc, onSnapshot, setDoc, updateDoc, writeBatch,
+    collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, getDocs, writeBatch,
     arrayUnion, arrayRemove, serverTimestamp,
   } = fs;
 
+  const docViaje = doc(db, "viajes", VIAJE);
   const colAgenda = collection(db, "viajes", VIAJE, "agenda");
   const colVotos = collection(db, "viajes", VIAJE, "votos");
   const colLugares = collection(db, "viajes", VIAJE, "lugares");
+
+  // ---------- Escuchar cambios (cualquiera puede leer) ----------
+  // includeMetadataChanges: así sabemos cuándo ya llegó la versión del
+  // servidor (y no solo la caché local).
+  onSnapshot(
+    docViaje,
+    { includeMetadataChanges: true },
+    (snap) => {
+      window.App.actualizarViaje(snap.exists() ? snap.data() : null, !snap.metadata.fromCache);
+    },
+    (err) => window.App.errorNube(err)
+  );
 
   onSnapshot(
     colLugares,
@@ -33,19 +51,15 @@ export function iniciarNube(db, fs) {
     (err) => window.App.errorNube(err)
   );
 
-  // ---------- Escuchar cambios (cualquiera puede leer) ----------
-  // includeMetadataChanges: así sabemos cuándo ya llegó la versión del
-  // servidor (y no solo la caché local).
   onSnapshot(
     colAgenda,
-    { includeMetadataChanges: true },
     (snap) => {
       const agenda = {};
       snap.forEach((d) => {
         const l = d.data().lugares;
         agenda[d.id] = Array.isArray(l) ? l : [];
       });
-      window.App.actualizarAgenda(agenda, !snap.metadata.fromCache);
+      window.App.actualizarAgenda(agenda);
     },
     (err) => window.App.errorNube(err)
   );
@@ -127,34 +141,27 @@ export function iniciarNube(db, fs) {
       await lote.commit();
     },
 
-    // Sube la lista original una sola vez. Escrituras separadas para que
-    // cada una se valide por su cuenta en las reglas.
-    async sembrarLugares(lista, quien) {
-      await Promise.all(lista.map((l) => this.crearLugar(l.id, {
-        nombre: l.nombre,
-        categoria: l.categoria,
-        mapa: l.mapa || "",
-        mapsUrl: "",
-        web: "",
-        wiki: l.wiki || "",
-      }, quien)));
-    },
+    // ---------- Viaje ----------
+    // Solo el admin. Borra toda la agenda y todos los votos (y los lugares,
+    // si no se pide conservarlos) y guarda la configuración del viaje nuevo.
+    // Los borrados van uno por uno (cada uno se valida por su cuenta en las
+    // reglas) y la configuración va al final: si algo falla a la mitad, se
+    // puede volver a intentar sin dejar un viaje nuevo con datos viejos.
+    // cfg: { nombre, ciudad, inicio, fin, llegada, salida }
+    async reiniciarViaje(cfg, conservarLugares, quien) {
+      const [agenda, votos, lugares] = await Promise.all([
+        getDocs(colAgenda),
+        getDocs(colVotos),
+        conservarLugares ? null : getDocs(colLugares),
+      ]);
+      const refs = [...agenda.docs, ...votos.docs, ...(lugares ? lugares.docs : [])].map((d) => d.ref);
+      await Promise.all(refs.map((r) => deleteDoc(r)));
 
-    // Sube un plan guardado en el navegador. Se SUMA a lo que ya hay.
-    async importar(plan, quien) {
-      const lote = writeBatch(db);
-      let cambios = 0;
-      Object.entries(plan.agenda).forEach(([diaId, ids]) => {
-        if (ids.length) {
-          lote.set(doc(colAgenda, diaId), datosDia(arrayUnion(...ids), quien), { merge: true });
-          cambios++;
-        }
+      await setDoc(docViaje, {
+        ...cfg,
+        actualizadoPor: quien.nombre,
+        actualizadoEn: serverTimestamp(),
       });
-      if (plan.favoritos.length) {
-        lote.set(doc(colVotos, quien.uid), datosVoto(arrayUnion(...plan.favoritos), quien), { merge: true });
-        cambios++;
-      }
-      if (cambios) await lote.commit();
     },
   };
 }

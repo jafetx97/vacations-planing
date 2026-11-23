@@ -8,8 +8,7 @@
 // ============================================================
 
 const CLAVE_GUARDADO = "vacaciones-dallas-v1";
-const CLAVE_MIGRACION = "vacaciones-dallas-migrado";
-const CIUDAD = "Dallas, TX"; // para buscar en Maps los lugares nuevos
+let ciudad = ""; // para buscar en Maps los lugares nuevos (viene del viaje)
 
 function estadoVacio() {
   const agenda = {};
@@ -47,10 +46,10 @@ let estado = estadoVacio();
 let nube = null;               // API de nube.js cuando Firebase está activo
 let votos = {};                // { uid: { nombre, lugares: [ids] } }
 let agendaCruda = {};          // agenda tal cual llega de Firestore
-let agendaDelServidor = false;
+let viaje = null;              // configuración del viaje (null = todavía no hay)
+let viajeDelServidor = false;  // el servidor ya confirmó si hay viaje o no
 let lugaresRecibidos = false;  // ya llegó algo (caché o servidor)
 let lugaresDelServidor = false;
-let sembrando = false;
 
 // ---------- Sesión ----------
 // Hasta que auth.js diga lo contrario, la app arranca en solo lectura.
@@ -73,6 +72,13 @@ function escapar(texto) {
     { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
   ));
 }
+
+// "Reunion Tower" -> "Reunion Tower, Austin, TX" (para buscar en Maps).
+const conCiudad = (nombre) => (ciudad ? `${nombre}, ${ciudad}` : nombre);
+
+// ¿Ya sabemos que no hay viaje configurado? / ¿seguimos esperando al servidor?
+const sinViaje = () => Boolean(nube) && viajeDelServidor && !viaje;
+const cargandoViaje = () => Boolean(nube) && !viaje && !viajeDelServidor;
 
 // Solo deja pasar enlaces http(s) (evita cosas como "javascript:...").
 function urlSegura(u) {
@@ -116,6 +122,7 @@ function lugaresDeCategoria(catId) {
 // En modo nube la agenda se recalcula cuando cambian los lugares o la
 // agenda (así un lugar borrado desaparece de los días).
 function recalcularAgenda() {
+  estado.agenda = {};
   DIAS.forEach((d) => {
     estado.agenda[d.id] = (agendaCruda[d.id] || []).filter((id) => LUGARES_POR_ID[id]);
   });
@@ -148,7 +155,21 @@ function diasDeLugar(lugarId) {
   return DIAS.filter((d) => estado.agenda[d.id].includes(lugarId));
 }
 
+// Título, fechas y botón de reinicio (solo admin) en el encabezado.
+function pintarEncabezado() {
+  $("#titulo-viaje").textContent = `🧳 ${viaje ? viaje.nombre : "Vacaciones"}`;
+  document.title = viaje ? `${viaje.nombre} · ¿Qué hacemos hoy?` : "¿Qué hacemos hoy?";
+
+  const partes = viaje ? [rangoLegible(viaje), viaje.ciudad].filter(Boolean) : [];
+  const sub = $("#subtitulo-viaje");
+  sub.textContent = partes.join(" · ");
+  sub.hidden = partes.length === 0;
+
+  $("#btn-viaje").hidden = !(nube && esAdmin());
+}
+
 function refrescarTodo() {
+  pintarEncabezado();
   pintarBarra();
   pintarActividades();
   pintarDias();
@@ -361,18 +382,24 @@ function pintarBarra() {
   barra.innerHTML = "";
   const total = Object.keys(LUGARES_POR_ID).length;
 
+  // Todavía no hay viaje: el admin lo configura, los demás esperan.
+  if (sinViaje()) {
+    const caja = document.createElement("div");
+    caja.className = "caja-vacia";
+    caja.innerHTML = esAdmin()
+      ? `<p>Todavía no hay un viaje configurado.</p>
+         <button id="btn-viaje-config" class="btn-principal">🧳 Configurar viaje</button>`
+      : `<p>El viaje todavía no está configurado. En cuanto el administrador lo prepare aparecerá aquí.</p>`;
+    barra.append(caja);
+    return;
+  }
+
   if (nube && lugaresDelServidor && total === 0) {
     const caja = document.createElement("div");
     caja.className = "caja-vacia";
-    if (esAdmin()) {
-      caja.innerHTML = `
-        <p>Todavía no hay lugares en la nube.</p>
-        <button id="btn-sembrar" class="btn-principal" ${sembrando ? "disabled" : ""}>
-          ${sembrando ? "Subiendo…" : `⬆️ Subir los ${LUGARES_INICIALES.length} lugares iniciales`}
-        </button>`;
-    } else {
-      caja.innerHTML = `<p>Todavía no hay lugares. En cuanto alguien los suba aparecerán aquí.</p>`;
-    }
+    caja.innerHTML = puedeEditarLugares()
+      ? `<p>Todavía no hay lugares. Agrega el primero con <strong>➕ Nuevo lugar</strong>.</p>`
+      : `<p>Todavía no hay lugares.</p>`;
     barra.append(caja);
   }
 
@@ -382,22 +409,6 @@ function pintarBarra() {
     b.className = "btn-nuevo-lugar";
     b.textContent = "➕ Nuevo lugar";
     barra.append(b);
-  }
-}
-
-async function sembrar() {
-  if (!esAdmin() || sembrando) return;
-  if (!confirm(`¿Subir los ${LUGARES_INICIALES.length} lugares de la lista original a la nube?`)) return;
-  sembrando = true;
-  pintarBarra();
-  try {
-    await nube.sembrarLugares(LUGARES_INICIALES, quienSoy());
-    avisar("Lugares subidos ✔");
-  } catch (err) {
-    errorAlGuardar(err);
-  } finally {
-    sembrando = false;
-    pintarBarra();
   }
 }
 
@@ -422,10 +433,11 @@ function pintarActividades() {
   const cont = $("#categorias");
   cont.innerHTML = "";
 
-  if ((nube && !lugaresRecibidos) || (!nube && sesion.estado === "cargando")) {
+  if ((nube && !lugaresRecibidos) || cargandoViaje() || (!nube && sesion.estado === "cargando")) {
     cont.innerHTML = `<p class="vacio">Cargando lugares…</p>`;
     return;
   }
+  if (sinViaje()) return; // la barra de arriba explica qué falta
 
   GRUPOS.forEach((grupo) => {
     const cats = grupo.categorias
@@ -479,6 +491,15 @@ function pintarActividades() {
 function pintarDias() {
   const cont = $("#dias");
   cont.innerHTML = "";
+
+  if (cargandoViaje() || (!nube && sesion.estado === "cargando")) {
+    cont.innerHTML = `<p class="vacio">Cargando…</p>`;
+    return;
+  }
+  if (sinViaje()) {
+    cont.innerHTML = `<p class="vacio">Todavía no hay un viaje configurado.</p>`;
+    return;
+  }
 
   DIAS.forEach((dia) => {
     const ids = estado.agenda[dia.id];
@@ -619,7 +640,8 @@ function elegirDia(diaId) {
   const { lugarId, diaOrigen } = seleccion;
   const lugar = LUGARES_POR_ID[lugarId];
   cerrarModal(modalDia);
-  if (!lugar) return; // lo borraron mientras estaba abierto
+  // Lo borraron o cambiaron el viaje mientras estaba abierto.
+  if (!lugar || !DIAS_POR_ID[diaId] || (diaOrigen && !DIAS_POR_ID[diaOrigen])) return;
 
   // Modo agregar + día donde ya está -> quitarlo de ese día.
   if (!diaOrigen && estado.agenda[diaId].includes(lugarId)) {
@@ -829,7 +851,7 @@ function guardarLugar(e) {
   // si es nuevo y trae enlace de Maps, buscamos por nombre + ciudad.
   const mapa = anterior && anterior.mapa
     ? anterior.mapa
-    : maps.url ? `${nombre}, ${CIUDAD}` : "";
+    : maps.url ? conCiudad(nombre) : "";
 
   const datos = { nombre, categoria, mapa, mapsUrl: maps.url, web: web.url, wiki: fotoElegida };
 
@@ -881,7 +903,7 @@ const modalMapa = $("#modal-mapa");
 function abrirMapa(id) {
   const lugar = LUGARES_POR_ID[id];
   if (!lugar || !(lugar.mapa || lugar.mapsUrl)) return;
-  const consulta = encodeURIComponent(lugar.mapa || `${lugar.nombre}, ${CIUDAD}`);
+  const consulta = encodeURIComponent(lugar.mapa || conCiudad(lugar.nombre));
   $("#modal-titulo").textContent = lugar.nombre;
   $("#modal-iframe").src = `https://www.google.com/maps?q=${consulta}&output=embed`;
   // Si hay enlace exacto de Maps, "Abrir en Google Maps" usa ese.
@@ -923,6 +945,7 @@ function establecerSesion(nueva) {
   // "local" = Firebase sin configurar: se puede editar como antes.
   puedeEditar = sesion.estado === "miembro" || sesion.estado === "local";
   if (sesion.estado === "local") {
+    aplicarViaje(VIAJE_LOCAL);
     establecerLugares(LUGARES_INICIALES);
     estado = cargarEstadoLocal();
     actualizarFotos();
@@ -934,7 +957,6 @@ function establecerSesion(nueva) {
   // "Reiniciar" solo en modo local: en la nube borraría el plan de todos.
   $("#btn-reiniciar").hidden = !puedeEditar || Boolean(nube);
   refrescarTodo();
-  revisarMigracion();
 }
 
 function pintarSesion() {
@@ -1016,12 +1038,41 @@ function actualizarLugares(lista, desdeServidor) {
   actualizarFotos();
 }
 
-function actualizarAgenda(agendaNube, desdeServidor) {
-  agendaCruda = agendaNube;
-  if (desdeServidor) agendaDelServidor = true;
+// Guarda el viaje y calcula sus días. Se defiende de datos raros
+// (por ejemplo, un documento editado a mano en la consola).
+function aplicarViaje(cfg) {
+  const texto = (v, porDefecto = "") => (typeof v === "string" ? v : porDefecto);
+  viaje = cfg
+    ? {
+        nombre: texto(cfg.nombre, "Vacaciones") || "Vacaciones",
+        ciudad: texto(cfg.ciudad),
+        inicio: texto(cfg.inicio),
+        fin: texto(cfg.fin),
+        llegada: texto(cfg.llegada),
+        salida: texto(cfg.salida),
+      }
+    : null;
+  ciudad = viaje ? viaje.ciudad : "";
+  construirDias(viaje);
+}
+
+function actualizarViaje(cfg, desdeServidor) {
+  // Si lo que llegó es de la caché y dice "no hay viaje", esperamos al
+  // servidor antes de mostrar "configura tu viaje".
+  if (!cfg && !desdeServidor) return;
+  if (desdeServidor) viajeDelServidor = true;
+
+  aplicarViaje(cfg);
+  // Los días cambiaron: un selector de día abierto ya no es válido.
+  if (modalDia.classList.contains("abierto")) cerrarModal(modalDia);
   recalcularAgenda();
   refrescarTodo();
-  revisarMigracion();
+}
+
+function actualizarAgenda(agendaNube) {
+  agendaCruda = agendaNube;
+  recalcularAgenda();
+  refrescarTodo();
 }
 
 function actualizarVotos(nuevos) {
@@ -1034,32 +1085,105 @@ function errorNube(err) {
   avisar("No se pudo sincronizar. Revisa tu conexión.");
 }
 
-// Una sola vez por dispositivo: si había un plan guardado en este
-// navegador (de antes de la nube), ofrecemos subirlo. Se SUMA a lo que haya.
-function revisarMigracion() {
-  if (!nube || sesion.estado !== "miembro" || !agendaDelServidor) return;
-  if (localStorage.getItem(CLAVE_MIGRACION)) return;
-  localStorage.setItem(CLAVE_MIGRACION, "1"); // no volver a preguntar
+// ============================================================
+//  MODAL: CONFIGURAR / REINICIAR VIAJE (solo admin)
+//  Borra la agenda y los votos (y los lugares, si no se conservan)
+//  y guarda las fechas del viaje nuevo.
+// ============================================================
+const modalViaje = $("#modal-viaje");
+const formViaje = $("#form-viaje");
+let guardandoViaje = false;
 
-  const local = cargarEstadoLocal();
-  const actividades = Object.values(local.agenda).reduce((n, a) => n + a.length, 0);
-  const favoritos = local.favoritos.length;
-  if (!actividades && !favoritos) return;
+function errorViaje(texto) {
+  const e = $("#viaje-error");
+  e.textContent = texto;
+  e.hidden = !texto;
+}
 
+function abrirFormViaje() {
+  if (!nube || !esAdmin()) return;
+  const primera = !viaje;
+
+  $("#viaje-titulo").textContent = primera ? "Configurar viaje" : "Reiniciar viaje";
+  $("#viaje-aviso").textContent = primera
+    ? "Define el viaje. Lo que haya quedado de antes en la agenda y en los votos se borrará."
+    : "⚠️ Se borrará toda la agenda y todos los votos del viaje actual. No se puede deshacer.";
+
+  $("#viaje-nombre").value = "";
+  $("#viaje-ciudad").value = "";
+  $("#viaje-inicio").value = "";
+  $("#viaje-fin").value = "";
+  $("#viaje-llegada").value = "";
+  $("#viaje-salida").value = "";
+  $("#viaje-conservar").checked = false;
+  errorViaje("");
+
+  abrirModal(modalViaje);
+  $("#viaje-nombre").focus();
+}
+
+async function guardarViaje(e) {
+  e.preventDefault();
+  if (!nube || !esAdmin() || guardandoViaje) return;
+
+  const cfg = {
+    nombre: $("#viaje-nombre").value.trim().replace(/\s+/g, " "),
+    ciudad: $("#viaje-ciudad").value.trim().replace(/\s+/g, " "),
+    inicio: $("#viaje-inicio").value,
+    fin: $("#viaje-fin").value,
+    llegada: $("#viaje-llegada").value.trim(),
+    salida: $("#viaje-salida").value.trim(),
+  };
+  const conservar = $("#viaje-conservar").checked;
+
+  if (!cfg.nombre) return errorViaje("El nombre del viaje es obligatorio.");
+  if (!cfg.ciudad) return errorViaje("La ciudad es obligatoria.");
+  if (!fechaDeIso(cfg.inicio) || !fechaDeIso(cfg.fin)) return errorViaje("Elige las fechas de inicio y fin.");
+  const dias = cuentaDias(cfg.inicio, cfg.fin);
+  if (dias === 0) return errorViaje("La fecha final no puede ser antes de la inicial.");
+  if (dias > MAX_DIAS_VIAJE) return errorViaje(`El viaje puede durar máximo ${MAX_DIAS_VIAJE} días.`);
+  if (!navigator.onLine) return errorViaje("Necesitas internet para reiniciar el viaje.");
+
+  // Resumen de lo que se va a borrar.
+  const actividades = Object.values(agendaCruda).reduce((n, a) => n + a.length, 0);
+  const personas = Object.values(votos).filter((v) => v.lugares.length).length;
+  const totalVotosAhora = Object.values(votos).reduce((n, v) => n + v.lugares.length, 0);
+  const lugares = Object.keys(LUGARES_POR_ID).length;
   const ok = confirm(
-    `Encontré un plan guardado en este dispositivo ` +
-    `(${actividades} en la agenda y ${favoritos} favoritos).\n\n` +
-    `¿Lo subo para que lo vea toda la familia? Se suma a lo que ya haya.`
+    `Vas a empezar "${cfg.nombre}" (${rangoLegible(cfg)}, ${dias} día${dias > 1 ? "s" : ""}).\n\n` +
+    `Se borrará:\n` +
+    `• ${actividades} actividad${actividades === 1 ? "" : "es"} en la agenda\n` +
+    `• ${totalVotosAhora} voto${totalVotosAhora === 1 ? "" : "s"} de ${personas} persona${personas === 1 ? "" : "s"}\n` +
+    `• ${conservar ? "Los lugares se conservan" : `${lugares} lugar${lugares === 1 ? "" : "es"}`}\n\n` +
+    `No se puede deshacer. ¿Continuar?`
   );
   if (!ok) return;
-  nube.importar(local, quienSoy())
-    .then(() => avisar("Plan subido a la nube ✔"))
-    .catch(errorAlGuardar);
+
+  guardandoViaje = true;
+  const boton = $("#btn-guardar-viaje");
+  boton.disabled = true;
+  boton.textContent = "Guardando…";
+  try {
+    await nube.reiniciarViaje(cfg, conservar, quienSoy());
+    cerrarModal(modalViaje);
+    avisar("Viaje listo ✔");
+  } catch (err) {
+    console.error("No se pudo reiniciar el viaje:", err);
+    errorViaje(err && err.code === "permission-denied"
+      ? "No tienes permiso para reiniciar el viaje (¿publicaste las reglas nuevas y eres admin?)."
+      : "No se pudo completar. Revisa tu internet e intenta de nuevo; es seguro repetirlo.");
+  } finally {
+    guardandoViaje = false;
+    boton.disabled = false;
+    boton.textContent = "Guardar";
+  }
 }
+
+formViaje.addEventListener("submit", guardarViaje);
 
 // auth.js y nube.js (módulos) se comunican con la app por aquí.
 window.App = {
-  establecerSesion, usarNube, actualizarLugares, actualizarAgenda, actualizarVotos, errorNube,
+  establecerSesion, usarNube, actualizarViaje, actualizarLugares, actualizarAgenda, actualizarVotos, errorNube,
 };
 
 // ============================================================
@@ -1088,7 +1212,8 @@ document.addEventListener("click", (e) => {
   if (editar) { abrirFormLugar(editar.dataset.id); return; }
 
   if (t.closest("#btn-nuevo-lugar")) { abrirFormLugar(); return; }
-  if (t.closest("#btn-sembrar")) { sembrar(); return; }
+  if (t.closest("#btn-viaje, #btn-viaje-config")) { abrirFormViaje(); return; }
+  if (t.closest("#btn-cancelar-viaje")) { cerrarModal(modalViaje); return; }
   if (t.closest("#btn-buscar-foto")) { buscarFoto(); return; }
   if (t.closest("#btn-borrar-lugar")) { borrarLugar(); return; }
   if (t.closest("#btn-cancelar-lugar")) { cerrarModal(modalLugar); return; }
