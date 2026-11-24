@@ -113,9 +113,32 @@ function establecerLugares(lista) {
   });
 }
 
+// ---------- Búsqueda ----------
+// Texto que escribió la persona, sin acentos ni mayúsculas ("" = sin filtro).
+// Es una sola búsqueda para las tres pestañas.
+let busqueda = "";
+
+const normalizar = (t) =>
+  String(t ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+
+// Cada palabra escrita debe aparecer en el nombre, la categoría o el grupo
+// del lugar: "taco" encuentra "Taco Bell" y "mexicano" encuentra todo lo mexicano.
+function coincide(lugar) {
+  if (!busqueda) return true;
+  if (!lugar) return false;
+  const cat = CATEGORIAS_POR_ID[lugar.categoria];
+  const grupo = GRUPOS.find((g) => g.categorias.includes(lugar.categoria));
+  const texto = normalizar(`${lugar.nombre} ${cat ? cat.titulo : ""} ${grupo ? grupo.titulo : ""}`);
+  return busqueda.split(" ").every((palabra) => texto.includes(palabra));
+}
+
+// Mensaje cuando la búsqueda no encuentra nada (el texto va con escapar()).
+const sinResultados = () =>
+  `<p class="vacio">No encontré nada con "<strong>${escapar($("#busqueda").value.trim())}</strong>".</p>`;
+
 function lugaresDeCategoria(catId) {
   return Object.values(LUGARES_POR_ID)
-    .filter((l) => l.categoria === catId)
+    .filter((l) => l.categoria === catId && coincide(l))
     .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
 }
 
@@ -166,6 +189,8 @@ function pintarEncabezado() {
   sub.hidden = partes.length === 0;
 
   $("#btn-viaje").hidden = !(nube && esAdmin());
+  // Sin viaje no hay nada que buscar.
+  $("#buscador").hidden = sinViaje();
 }
 
 function refrescarTodo() {
@@ -174,6 +199,8 @@ function refrescarTodo() {
   pintarActividades();
   pintarDias();
   if ($("#vista-favoritos").classList.contains("activa")) pintarFavoritos();
+  // Si la lista de "agregar a un día" está abierta, se actualiza sola.
+  if (modalAgregar.classList.contains("abierto")) pintarAgregar();
 }
 
 // ============================================================
@@ -439,17 +466,24 @@ function pintarActividades() {
   }
   if (sinViaje()) return; // la barra de arriba explica qué falta
 
+  let hayResultados = false;
   GRUPOS.forEach((grupo) => {
     const cats = grupo.categorias
       .map((id) => ({ cat: CATEGORIAS_POR_ID[id], lugares: lugaresDeCategoria(id) }))
       .filter((c) => c.cat);
     const total = cats.reduce((n, c) => n + c.lugares.length, 0);
+    // Buscando: los grupos sin coincidencias se esconden.
+    if (busqueda && total === 0) return;
+    hayResultados = true;
     // Si el grupo tiene una sola categoría, no repetimos el subtítulo.
     const conSubtitulos = cats.length > 1;
 
+    // Buscando: los grupos con coincidencias se abren (sin cambiar lo que
+    // la persona había dejado abierto o cerrado).
+    const forzado = Boolean(busqueda);
     const det = document.createElement("details");
     det.className = "grupo";
-    det.open = !gruposCerrados.has(grupo.id);
+    det.open = forzado || !gruposCerrados.has(grupo.id);
     det.innerHTML = `
       <summary>
         <span class="grupo-titulo">${grupo.emoji} ${grupo.titulo}</span>
@@ -471,11 +505,17 @@ function pintarActividades() {
         ${conSubtitulos ? `<h3>${cat.emoji} ${cat.titulo} <span class="conteo">${lugares.length}</span></h3>` : ""}
         <div class="grid"></div>`;
       const grid = $(".grid", seccion);
-      lugares.forEach((lugar) => grid.appendChild(crearTarjeta(lugar)));
+      lugares.forEach((lugar) => {
+        const tarjeta = crearTarjeta(lugar);
+        // Solo en esta pestaña: lo que ya está en algún día se ve en gris.
+        if (diasDeLugar(lugar.id).length) tarjeta.classList.add("asignada");
+        grid.appendChild(tarjeta);
+      });
       contenido.appendChild(seccion);
     });
 
     det.addEventListener("toggle", () => {
+      if (forzado) return; // abierto por la búsqueda: no es una elección de la persona
       if (det.open) gruposCerrados.delete(grupo.id);
       else gruposCerrados.add(grupo.id);
       guardarGrupos();
@@ -483,6 +523,8 @@ function pintarActividades() {
 
     cont.appendChild(det);
   });
+
+  if (busqueda && !hayResultados) cont.innerHTML = sinResultados();
 }
 
 // ============================================================
@@ -501,20 +543,31 @@ function pintarDias() {
     return;
   }
 
+  let hayResultados = false;
   DIAS.forEach((dia) => {
-    const ids = estado.agenda[dia.id];
+    // Buscando: solo se muestran los días que tienen coincidencias.
+    const ids = estado.agenda[dia.id].filter((id) => coincide(LUGARES_POR_ID[id]));
+    if (busqueda && ids.length === 0) return;
+    hayResultados = true;
+
     const el = document.createElement("div");
     el.className = "dia";
     el.innerHTML = `
       <div class="dia-cabecera">
-        <span>${dia.etiqueta}</span>
-        ${dia.fijo ? `<span class="fijo">${dia.fijo}</span>` : ""}
+        <span>${escapar(dia.etiqueta)}</span>
+        ${dia.fijo ? `<span class="fijo">${escapar(dia.fijo)}</span>` : ""}
       </div>
-      <div class="dia-lista"></div>`;
+      <div class="dia-lista"></div>
+      ${puedeEditar
+        ? `<div class="dia-pie">
+             <button type="button" class="dia-mas" data-dia="${escapar(dia.id)}"
+                     aria-label="Agregar una actividad al ${escapar(dia.etiqueta)}">+</button>
+           </div>`
+        : ""}`;
 
     const lista = $(".dia-lista", el);
     if (ids.length === 0) {
-      lista.innerHTML = `<p class="dia-vacio">Nada todavía. Agrega algo desde <strong>Actividades</strong>.</p>`;
+      lista.innerHTML = `<p class="dia-vacio">${puedeEditar ? "Nada todavía. Toca + para agregar algo." : "Nada todavía."}</p>`;
     } else {
       const grid = document.createElement("div");
       grid.className = "grid";
@@ -523,6 +576,8 @@ function pintarDias() {
     }
     cont.appendChild(el);
   });
+
+  if (busqueda && !hayResultados) cont.innerHTML = sinResultados();
 }
 
 // ============================================================
@@ -533,14 +588,19 @@ function pintarFavoritos() {
 
   // Modo nube: todo lo que tenga al menos un voto, del más votado al menos.
   // Modo local: mis favoritos, en el orden en que los marqué.
-  const ids = nube
+  const todos = nube
     ? Object.keys(LUGARES_POR_ID)
         .filter((id) => totalVotos(id) > 0)
         .sort((a, b) => totalVotos(b) - totalVotos(a))
     : estado.favoritos.filter((id) => LUGARES_POR_ID[id]);
+  const ids = todos.filter((id) => coincide(LUGARES_POR_ID[id]));
 
-  if (ids.length === 0) {
+  if (todos.length === 0) {
     cont.innerHTML = `<p class="vacio">Aún no hay votos.<br>Toca 🤍 en las actividades que te gusten.</p>`;
+    return;
+  }
+  if (ids.length === 0) {
+    cont.innerHTML = sinResultados();
     return;
   }
   cont.innerHTML = '<div class="grid"></div>';
@@ -664,11 +724,112 @@ function quitarSeleccion() {
 }
 
 // ============================================================
+//  MODAL: AGREGAR DESDE UN DÍA (botón "+" de cada día)
+//  Lista los lugares que todavía no están en NINGÚN día. Se queda
+//  abierto para poder agregar varios; los que se agregan salen de la lista.
+// ============================================================
+const modalAgregar = $("#modal-agregar");
+let diaAgregar = null; // id (fecha) del día al que se está agregando
+
+function lugaresSinAgendar() {
+  return Object.values(LUGARES_POR_ID).filter(
+    (l) => !DIAS.some((d) => estado.agenda[d.id].includes(l.id))
+  );
+}
+
+function abrirAgregar(diaId) {
+  if (!puedeEditar || !DIAS_POR_ID[diaId]) return;
+  diaAgregar = diaId;
+  pintarAgregar();
+  abrirModal(modalAgregar);
+}
+
+function pintarAgregar() {
+  const dia = DIAS_POR_ID[diaAgregar];
+  if (!dia) { cerrarModal(modalAgregar); return; } // cambió el viaje
+
+  const libres = lugaresSinAgendar();
+  const cont = $("#agregar-lista");
+  const posicion = cont.scrollTop; // para no volver al inicio tras cada cambio
+  cont.innerHTML = "";
+
+  $("#agregar-titulo").textContent = `Agregar al ${dia.etiqueta}`;
+  $("#agregar-sub").textContent = libres.length
+    ? `${libres.length} lugar${libres.length === 1 ? "" : "es"} sin agendar. Toca los que quieras.`
+    : "";
+
+  if (libres.length === 0) {
+    cont.innerHTML = `<p class="dia-vacio">Ya agendaste todo lo que hay. Puedes crear un lugar nuevo aquí abajo.</p>`;
+  }
+
+  // Mismo orden que la pestaña Actividades: por grupo y categoría.
+  GRUPOS.forEach((grupo) => grupo.categorias.forEach((catId) => {
+    const cat = CATEGORIAS_POR_ID[catId];
+    const items = libres
+      .filter((l) => l.categoria === catId)
+      .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+    if (!cat || items.length === 0) return;
+
+    const titulo = document.createElement("h4");
+    titulo.textContent = `${cat.emoji} ${cat.titulo}`;
+    cont.append(titulo);
+
+    items.forEach((lugar) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "agregar-item";
+      b.dataset.id = lugar.id;
+
+      const img = document.createElement("img");
+      img.src = fotoDe(lugar);
+      img.alt = "";
+      img.loading = "lazy";
+      img.addEventListener("error", () => {
+        if (img.src !== lugar.respaldo) img.src = lugar.respaldo;
+      });
+
+      const nombre = document.createElement("span");
+      nombre.className = "agregar-nombre";
+      nombre.textContent = lugar.nombre;
+
+      const mas = document.createElement("span");
+      mas.className = "agregar-mas";
+      mas.setAttribute("aria-hidden", "true");
+      mas.textContent = "+";
+
+      b.append(img, nombre, mas);
+      cont.append(b);
+    });
+  }));
+
+  // Al final de la lista: crear un lugar nuevo (se agrega también a este día).
+  if (puedeEditarLugares()) {
+    const nuevo = document.createElement("button");
+    nuevo.type = "button";
+    nuevo.className = "agregar-nuevo";
+    nuevo.setAttribute("aria-label", "Crear un lugar nuevo y agregarlo a este día");
+    nuevo.innerHTML = `<span class="agregar-nuevo-mas" aria-hidden="true">+</span><span>Nuevo lugar</span>`;
+    cont.append(nuevo);
+  }
+
+  cont.scrollTop = posicion;
+}
+
+function agregarDesdeLista(lugarId) {
+  const lugar = LUGARES_POR_ID[lugarId];
+  const dia = DIAS_POR_ID[diaAgregar];
+  if (!puedeEditar || !lugar || !dia) return;
+  cambiarAgenda(lugarId, { agregarA: dia.id });
+  avisar(`Agregado: ${lugar.nombre} → ${dia.etiqueta}`);
+}
+
+// ============================================================
 //  MODAL: NUEVO / EDITAR LUGAR
 // ============================================================
 const modalLugar = $("#modal-lugar");
 const formLugar = $("#form-lugar");
 let edicion = null;     // null = nuevo; si no, el id del lugar
+let destinoNuevo = null; // día al que se agrega el lugar nuevo (si se creó desde un día)
 let fotoElegida = "";   // título de Wikipedia elegido ("" = sin foto)
 let opcionesFoto = [];  // [{ titulo, url }]
 let busquedaFoto = 0;   // para ignorar búsquedas viejas
@@ -678,13 +839,17 @@ $("#lugar-categoria").innerHTML = CATEGORIAS
   .map((c) => `<option value="${c.id}">${c.emoji} ${c.titulo}</option>`)
   .join("");
 
-function abrirFormLugar(id = null) {
+// diaDestino (solo al crear): si viene, el lugar nuevo se agrega también a ese día.
+function abrirFormLugar(id = null, diaDestino = null) {
   if (!puedeEditarLugares()) return;
   const lugar = id ? LUGARES_POR_ID[id] : null;
   if (id && !lugar) return;
   edicion = id;
+  destinoNuevo = !id && DIAS_POR_ID[diaDestino] ? diaDestino : null;
 
-  $("#lugar-titulo").textContent = lugar ? `Editar "${lugar.nombre}"` : "Nuevo lugar";
+  $("#lugar-titulo").textContent = lugar
+    ? `Editar "${lugar.nombre}"`
+    : destinoNuevo ? `Nuevo lugar para el ${DIAS_POR_ID[destinoNuevo].etiqueta}` : "Nuevo lugar";
   $("#lugar-nombre").value = lugar ? lugar.nombre : "";
   $("#lugar-categoria").value = lugar ? lugar.categoria : "actividades";
   $("#lugar-maps").value = lugar ? lugar.mapsUrl : "";
@@ -822,7 +987,7 @@ function nuevoId(nombre) {
   return `${base}-${azar}`;
 }
 
-const normalizarNombre = (n) => n.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+const normalizarNombre = normalizar;
 
 function guardarLugar(e) {
   e.preventDefault();
@@ -862,13 +1027,31 @@ function guardarLugar(e) {
     guardarCacheFotos();
   }
 
-  const promesa = edicion
-    ? nube.editarLugar(edicion, datos, quienSoy())
-    : nube.crearLugar(nuevoId(nombre), datos, quienSoy());
-  promesa.catch(errorAlGuardar);
+  // Si se creó desde el "+" de un día, también se agrega a ese día.
+  const diaDestino = !edicion && DIAS_POR_ID[destinoNuevo] ? destinoNuevo : null;
+  const editando = Boolean(edicion); // cerrarModal() vacía "edicion"
+
+  if (edicion) {
+    nube.editarLugar(edicion, datos, quienSoy()).catch(errorAlGuardar);
+  } else {
+    const id = nuevoId(nombre);
+    // Las dos escrituras salen juntas y Firestore las aplica en orden
+    // (también sin señal). Si crear el lugar falla, se deshace lo del día.
+    nube.crearLugar(id, datos, quienSoy()).catch((err) => {
+      errorAlGuardar(err);
+      if (diaDestino) nube.cambiarAgenda(id, diaDestino, null, quienSoy()).catch(() => {});
+    });
+    if (diaDestino) cambiarAgenda(id, { agregarA: diaDestino });
+  }
 
   cerrarModal(modalLugar);
-  avisar(edicion ? `Guardado: ${nombre}` : `Agregado: ${nombre} ✔`);
+  // Se creó desde el "+" de un día: también se cierra la lista de atrás.
+  if (diaDestino) cerrarModal(modalAgregar);
+  avisar(editando
+    ? `Guardado: ${nombre}`
+    : diaDestino
+      ? `Agregado: ${nombre} → ${DIAS_POR_ID[diaDestino].etiqueta} ✔`
+      : `Agregado: ${nombre} ✔`);
 }
 
 function borrarLugar() {
@@ -923,7 +1106,8 @@ function cerrarModal(m) {
   m.setAttribute("aria-hidden", "true");
   if (m === modalMapa) $("#modal-iframe").src = ""; // detener la carga del mapa
   if (m === modalDia) seleccion = null;
-  if (m === modalLugar) { edicion = null; busquedaFoto++; }
+  if (m === modalAgregar) diaAgregar = null;
+  if (m === modalLugar) { edicion = null; destinoNuevo = null; busquedaFoto++; }
 }
 
 // ---------- Aviso breve ----------
@@ -1225,6 +1409,16 @@ document.addEventListener("click", (e) => {
     return;
   }
 
+  const mas = t.closest(".dia-mas");
+  if (mas) { abrirAgregar(mas.dataset.dia); return; }
+
+  const itemAgregar = t.closest(".agregar-item");
+  if (itemAgregar) { agregarDesdeLista(itemAgregar.dataset.id); return; }
+
+  if (t.closest(".agregar-nuevo")) { abrirFormLugar(null, diaAgregar); return; }
+
+  if (t.closest("#btn-agregar-listo")) { cerrarModal(modalAgregar); return; }
+
   const diaBtn = t.closest(".dia-btn");
   if (diaBtn) { abrirSelectorDia(diaBtn.dataset.id, diaBtn.dataset.dia || null); return; }
 
@@ -1256,6 +1450,42 @@ document.addEventListener("click", (e) => {
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") $$(".modal.abierto").forEach(cerrarModal);
+});
+
+// ============================================================
+//  BUSCADOR (filtra Actividades, Los días y Votos a la vez)
+// ============================================================
+const campoBusqueda = $("#busqueda");
+const botonLimpiar = $("#btn-limpiar-busqueda");
+let temporizadorBusqueda = null;
+
+function aplicarBusqueda() {
+  clearTimeout(temporizadorBusqueda);
+  busqueda = normalizar(campoBusqueda.value).replace(/\s+/g, " ");
+  botonLimpiar.hidden = campoBusqueda.value === "";
+  refrescarTodo();
+}
+
+function limpiarBusqueda() {
+  campoBusqueda.value = "";
+  aplicarBusqueda();
+}
+
+// Un momento después de la última letra (evita repintar en cada tecla).
+campoBusqueda.addEventListener("input", () => {
+  botonLimpiar.hidden = campoBusqueda.value === "";
+  clearTimeout(temporizadorBusqueda);
+  temporizadorBusqueda = setTimeout(aplicarBusqueda, 150);
+});
+
+campoBusqueda.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && campoBusqueda.value) limpiarBusqueda();
+  if (e.key === "Enter") campoBusqueda.blur(); // cierra el teclado en el celular
+});
+
+botonLimpiar.addEventListener("click", () => {
+  limpiarBusqueda();
+  campoBusqueda.focus();
 });
 
 // ============================================================

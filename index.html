@@ -30,6 +30,15 @@
     <!-- Aviso de modo solo lectura (lo controla app.js) -->
     <p id="aviso-lectura" class="aviso-lectura" hidden></p>
 
+    <!-- Buscador: filtra las tres pestañas (lo controla app.js) -->
+    <div id="buscador" class="buscador" role="search">
+      <label for="busqueda" class="solo-lectores">Buscar lugares</label>
+      <input id="busqueda" type="search" placeholder="🔍 Buscar lugar o categoría…"
+             autocomplete="off" enterkeyhint="search" maxlength="60" />
+      <button id="btn-limpiar-busqueda" type="button" class="buscador-limpiar"
+              aria-label="Borrar búsqueda" hidden>✕</button>
+    </div>
+
     <!-- VISTA: ACTIVIDADES -->
     <section id="vista-actividades" class="vista activa">
       <p class="ayuda">
@@ -82,6 +91,17 @@
       <p id="modal-dia-sub" class="modal-sub"></p>
       <div id="modal-dia-opciones" class="dias-opciones"></div>
       <button id="btn-quitar-dia" class="btn-quitar">🗑️ Quitar de este día</button>
+    </div>
+  </div>
+
+  <!-- Modal para agregar actividades sin agendar a un día (botón "+" de cada día) -->
+  <div id="modal-agregar" class="modal" aria-hidden="true">
+    <div class="modal-caja" role="dialog" aria-modal="true" aria-labelledby="agregar-titulo">
+      <button class="modal-cerrar" type="button" aria-label="Cerrar">✕</button>
+      <h3 id="agregar-titulo">Agregar</h3>
+      <p id="agregar-sub" class="modal-sub"></p>
+      <div id="agregar-lista" class="agregar-lista"></div>
+      <button id="btn-agregar-listo" type="button" class="btn-principal btn-listo">Listo</button>
     </div>
   </div>
 

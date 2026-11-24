@@ -16,6 +16,13 @@ Publicada en https://vacations-planing.pamolitas.com (GitHub Pages).
   una nota fija (llegada, salida). **🔀 Mover / Quitar** cambia una actividad de día o
   la saca del plan.
 - **❤️ Votos**: lo que la familia votó, del más votado al menos.
+- **+ en cada día** (pestaña "Los días"): abre la lista de lugares que todavía no están
+  en ningún día; tocas los que quieras (se pueden agregar varios seguidos) y "Listo".
+  Al final de esa lista, **+ Nuevo lugar** crea un lugar y lo agrega a ese día.
+- **🔍 Buscador** (arriba de las pestañas): filtra mientras escribes, sin importar
+  mayúsculas ni acentos. Busca en el nombre, la categoría y el grupo ("mexicano",
+  "alimentos"…). Es una sola búsqueda que se aplica a Actividades, Los días y Votos.
+  En "Los días" solo muestra los días que tienen coincidencias.
 - **Sin sesión**: se ve todo en modo solo lectura.
 - **↺ Reiniciar viaje** (solo admin, arriba a la derecha): para reutilizar el sitio con
   otro viaje. Pide nombre, ciudad y fechas de inicio y fin (máximo 60 días), y borra la
