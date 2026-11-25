@@ -99,7 +99,12 @@ function urlSegura(u) {
 // ============================================================
 //  LUGARES
 // ============================================================
+// Lo último que llegó de lugares, para recalcular si cambian las categorías
+// (un lugar de una categoría que aún no llega no se puede pintar).
+let lugaresCrudos = [];
+
 function establecerLugares(lista) {
+  lugaresCrudos = lista;
   Object.keys(LUGARES_POR_ID).forEach((id) => delete LUGARES_POR_ID[id]);
   lista.forEach((l) => {
     const cat = CATEGORIAS_POR_ID[l.categoria];
@@ -120,6 +125,54 @@ function establecerLugares(lista) {
   });
 }
 
+// ============================================================
+//  CATEGORÍAS
+//  Llegan de Firestore. Mientras la colección esté vacía se usan las 8
+//  de la base (CATEGORIAS_BASE), y el admin las sube solas una vez.
+// ============================================================
+let categoriasDelServidor = false;
+let sembrandoCategorias = false;
+
+function establecerCategorias(lista) {
+  CATEGORIAS.length = 0;
+  Object.keys(CATEGORIAS_POR_ID).forEach((k) => delete CATEGORIAS_POR_ID[k]);
+  lista.forEach((c) => {
+    if (!c || !c.id || typeof c.titulo !== "string" || !c.titulo) return; // datos raros
+    const cat = {
+      id: c.id,
+      titulo: c.titulo,
+      emoji: typeof c.emoji === "string" && c.emoji ? c.emoji : "📌",
+      color: /^[0-9a-f]{6}$/.test(c.color) ? c.color : "7f8c8d",
+      grupo: GRUPOS_POR_ID[c.grupo] ? c.grupo : "actividades",
+      orden: Number.isInteger(c.orden) ? c.orden : null,
+      creadoPor: typeof c.creadoPor === "string" ? c.creadoPor : "",
+    };
+    CATEGORIAS.push(cat);
+    CATEGORIAS_POR_ID[cat.id] = cat;
+  });
+  CATEGORIAS.sort((a, b) =>
+    GRUPOS.findIndex((g) => g.id === a.grupo) - GRUPOS.findIndex((g) => g.id === b.grupo) ||
+    ordenarCategorias(a, b));
+}
+
+// Lugares que hay en una categoría (sin filtro de búsqueda).
+const lugaresEnCategoria = (catId) =>
+  Object.values(LUGARES_POR_ID).filter((l) => l.categoria === catId).length;
+
+// Llena el selector de categoría del formulario de lugar, por bloque.
+function llenarSelectCategorias(seleccion) {
+  const select = $("#lugar-categoria");
+  select.innerHTML = GRUPOS.map((g) => {
+    const cats = categoriasDeGrupo(g.id);
+    if (!cats.length) return "";
+    return `<optgroup label="${escapar(`${g.emoji} ${g.titulo}`)}">${cats
+      .map((c) => `<option value="${escapar(c.id)}">${escapar(`${c.emoji} ${c.titulo}`)}</option>`)
+      .join("")}</optgroup>`;
+  }).join("") + (puedeEditarLugares() ? `<option value="__nueva__">➕ Nueva categoría…</option>` : "");
+  select.value = CATEGORIAS_POR_ID[seleccion] ? seleccion : (CATEGORIAS[0] ? CATEGORIAS[0].id : "");
+  select.dataset.anterior = select.value;
+}
+
 // ---------- Búsqueda ----------
 // Texto que escribió la persona, sin acentos ni mayúsculas ("" = sin filtro).
 // Es una sola búsqueda para las tres pestañas.
@@ -134,7 +187,7 @@ function coincide(lugar) {
   if (!busqueda) return true;
   if (!lugar) return false;
   const cat = CATEGORIAS_POR_ID[lugar.categoria];
-  const grupo = GRUPOS.find((g) => g.categorias.includes(lugar.categoria));
+  const grupo = cat && GRUPOS_POR_ID[cat.grupo];
   const texto = normalizar(`${lugar.nombre} ${cat ? cat.titulo : ""} ${grupo ? grupo.titulo : ""}`);
   return busqueda.split(" ").every((palabra) => texto.includes(palabra));
 }
@@ -219,6 +272,7 @@ function refrescarTodo() {
   if ($("#vista-favoritos").classList.contains("activa")) pintarFavoritos();
   // Si la lista de "agregar a un día" está abierta, se actualiza sola.
   if (modalAgregar.classList.contains("abierto")) pintarAgregar();
+  if (modalCategorias.classList.contains("abierto")) pintarCategorias();
 }
 
 // ============================================================
@@ -449,11 +503,18 @@ function pintarBarra() {
   }
 
   if (puedeEditarLugares()) {
+    const fila = document.createElement("div");
+    fila.className = "barra-botones";
     const b = document.createElement("button");
     b.id = "btn-nuevo-lugar";
     b.className = "btn-nuevo-lugar";
     b.textContent = "➕ Nuevo lugar";
-    barra.append(b);
+    const c = document.createElement("button");
+    c.id = "btn-categorias";
+    c.className = "btn-nuevo-lugar btn-categorias";
+    c.textContent = "🏷️ Categorías";
+    fila.append(b, c);
+    barra.append(fila);
   }
 }
 
@@ -486,9 +547,8 @@ function pintarActividades() {
 
   let hayResultados = false;
   GRUPOS.forEach((grupo) => {
-    const cats = grupo.categorias
-      .map((id) => ({ cat: CATEGORIAS_POR_ID[id], lugares: lugaresDeCategoria(id) }))
-      .filter((c) => c.cat);
+    const cats = categoriasDeGrupo(grupo.id)
+      .map((cat) => ({ cat, lugares: lugaresDeCategoria(cat.id) }));
     const total = cats.reduce((n, c) => n + c.lugares.length, 0);
     // Buscando: los grupos sin coincidencias se esconden.
     if (busqueda && total === 0) return;
@@ -520,7 +580,7 @@ function pintarActividades() {
       const seccion = document.createElement("div");
       seccion.className = "categoria";
       seccion.innerHTML = `
-        ${conSubtitulos ? `<h3>${cat.emoji} ${cat.titulo} <span class="conteo">${lugares.length}</span></h3>` : ""}
+        ${conSubtitulos ? `<h3>${escapar(cat.emoji)} ${escapar(cat.titulo)} <span class="conteo">${lugares.length}</span></h3>` : ""}
         <div class="grid"></div>`;
       const grid = $(".grid", seccion);
       lugares.forEach((lugar) => {
@@ -653,7 +713,7 @@ function crearListaDetalle(dia, ids) {
     const votantes = votantesDe(id);
 
     const datos = [
-      cat ? filaDato(cat.emoji, escapar(cat.titulo)) : "",
+      cat ? filaDato(escapar(cat.emoji), escapar(cat.titulo)) : "",
       lugar.horario ? filaDato("🕒", escapar(lugar.horario)) : "",
       maps ? filaDato("📍", `<a href="${escapar(maps)}" target="_blank" rel="noopener noreferrer">Abrir en Google Maps</a>`) : "",
       web ? filaDato("🌐", `<a href="${escapar(web)}" target="_blank" rel="noopener noreferrer">${escapar(new URL(web).hostname.replace(/^www\./, ""))}</a>`) : "",
@@ -933,8 +993,8 @@ function pintarAgregar() {
   }
 
   // Mismo orden que la pestaña Actividades: por grupo y categoría.
-  GRUPOS.forEach((grupo) => grupo.categorias.forEach((catId) => {
-    const cat = CATEGORIAS_POR_ID[catId];
+  GRUPOS.forEach((grupo) => categoriasDeGrupo(grupo.id).forEach((cat) => {
+    const catId = cat.id;
     const items = libres
       .filter((l) => l.categoria === catId)
       .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
@@ -1004,10 +1064,6 @@ let fotoElegida = "";   // título de Wikipedia elegido ("" = sin foto)
 let opcionesFoto = [];  // [{ titulo, url }]
 let busquedaFoto = 0;   // para ignorar búsquedas viejas
 
-// Llenar la lista de categorías una sola vez.
-$("#lugar-categoria").innerHTML = CATEGORIAS
-  .map((c) => `<option value="${c.id}">${c.emoji} ${c.titulo}</option>`)
-  .join("");
 
 // diaDestino (solo al crear): si viene, el lugar nuevo se agrega también a ese día.
 function abrirFormLugar(id = null, diaDestino = null) {
@@ -1021,7 +1077,7 @@ function abrirFormLugar(id = null, diaDestino = null) {
     ? `Editar "${lugar.nombre}"`
     : destinoNuevo ? `Nuevo lugar para el ${DIAS_POR_ID[destinoNuevo].etiqueta}` : "Nuevo lugar";
   $("#lugar-nombre").value = lugar ? lugar.nombre : "";
-  $("#lugar-categoria").value = lugar ? lugar.categoria : "actividades";
+  llenarSelectCategorias(lugar ? lugar.categoria : "actividades");
   $("#lugar-maps").value = lugar ? lugar.mapsUrl : "";
   $("#lugar-web").value = lugar ? lugar.web : "";
   $("#lugar-horario").value = lugar ? lugar.horario : "";
@@ -1253,6 +1309,232 @@ function borrarLugar() {
 formLugar.addEventListener("submit", guardarLugar);
 
 // ============================================================
+//  MODAL: LISTA DE CATEGORÍAS (todos los miembros la ven;
+//  editar y borrar, solo el admin)
+// ============================================================
+const modalCategorias = $("#modal-categorias");
+
+function abrirCategorias() {
+  if (!puedeEditarLugares()) return;
+  pintarCategorias();
+  abrirModal(modalCategorias);
+}
+
+function pintarCategorias() {
+  const cont = $("#categorias-lista");
+  cont.innerHTML = "";
+  $("#categorias-sub").textContent = esAdmin()
+    ? "Toca ✏️ para cambiar nombre, emoji o bloque. Solo se puede borrar una categoría vacía."
+    : "Cualquiera puede crear categorías. Para cambiar o borrar una, pídeselo al administrador.";
+
+  GRUPOS.forEach((g) => {
+    const cats = categoriasDeGrupo(g.id);
+    const h = document.createElement("h4");
+    h.textContent = `${g.emoji} ${g.titulo}`;
+    cont.append(h);
+    if (!cats.length) {
+      const p = document.createElement("p");
+      p.className = "dia-vacio";
+      p.textContent = "Sin categorías.";
+      cont.append(p);
+      return;
+    }
+    cats.forEach((c) => {
+      const n = lugaresEnCategoria(c.id);
+      const fila = document.createElement("div");
+      fila.className = "categoria-fila";
+
+      const nombre = document.createElement("span");
+      nombre.className = "categoria-nombre";
+      nombre.textContent = `${c.emoji} ${c.titulo}`;
+      const conteo = document.createElement("span");
+      conteo.className = "categoria-conteo";
+      conteo.textContent = `${n} lugar${n === 1 ? "" : "es"}`;
+      fila.append(nombre, conteo);
+
+      if (esAdmin()) {
+        const editar = document.createElement("button");
+        editar.type = "button";
+        editar.className = "categoria-editar";
+        editar.dataset.id = c.id;
+        editar.setAttribute("aria-label", `Editar la categoría ${c.titulo}`);
+        editar.textContent = "✏️";
+        fila.append(editar);
+      }
+      cont.append(fila);
+    });
+  });
+
+  const nueva = document.createElement("button");
+  nueva.type = "button";
+  nueva.className = "agregar-nuevo";
+  nueva.id = "btn-nueva-categoria";
+  nueva.innerHTML = `<span class="agregar-nuevo-mas" aria-hidden="true">+</span><span>Nueva categoría</span>`;
+  cont.append(nueva);
+}
+
+// ============================================================
+//  MODAL: NUEVA / EDITAR CATEGORÍA
+//  Se puede abrir desde la lista de categorías o desde el formulario de
+//  lugar (opción "➕ Nueva categoría…"); en ese caso, al guardar, la
+//  categoría nueva queda elegida en el lugar.
+// ============================================================
+const modalCategoria = $("#modal-categoria");
+let catEdicion = null;       // null = nueva; si no, el id
+let catDesdeLugar = false;   // se abrió desde el formulario de lugar
+let emojiElegido = "";
+
+function abrirFormCategoria(id = null, { desdeLugar = false, grupo = null } = {}) {
+  if (!puedeEditarLugares()) return;
+  const cat = id ? CATEGORIAS_POR_ID[id] : null;
+  if (id && (!cat || !esAdmin())) return;
+  catEdicion = id;
+  catDesdeLugar = desdeLugar;
+
+  $("#categoria-titulo").textContent = cat ? `Editar "${cat.titulo}"` : "Nueva categoría";
+  $("#categoria-nombre").value = cat ? cat.titulo : "";
+  $("#categoria-grupo").innerHTML = GRUPOS
+    .map((g) => `<option value="${g.id}">${g.emoji} ${g.titulo}</option>`).join("");
+  $("#categoria-grupo").value = cat ? cat.grupo : (GRUPOS_POR_ID[grupo] ? grupo : "alimentos");
+  emojiElegido = cat ? cat.emoji : EMOJIS_SUGERIDOS[0];
+  $("#categoria-emoji").value = cat && !EMOJIS_SUGERIDOS.includes(cat.emoji) ? cat.emoji : "";
+  pintarEmojis();
+  errorCategoria("");
+
+  // Borrar: solo admin, solo al editar, solo si está vacía.
+  const borrar = $("#btn-borrar-categoria");
+  const n = cat ? lugaresEnCategoria(cat.id) : 0;
+  borrar.hidden = !cat;
+  borrar.disabled = n > 0;
+  $("#categoria-borrar-nota").hidden = !(cat && n > 0);
+  $("#categoria-borrar-nota").textContent = n > 0
+    ? `No se puede borrar: tiene ${n} lugar${n === 1 ? "" : "es"}. Muévelos a otra categoría primero.`
+    : "";
+
+  abrirModal(modalCategoria);
+  $("#categoria-nombre").focus();
+}
+
+function errorCategoria(texto) {
+  const e = $("#categoria-error");
+  e.textContent = texto;
+  e.hidden = !texto;
+}
+
+function pintarEmojis() {
+  const cont = $("#categoria-emojis");
+  cont.innerHTML = "";
+  const propio = primerEmoji($("#categoria-emoji").value);
+  EMOJIS_SUGERIDOS.forEach((e) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "emoji-opcion" + (!propio && e === emojiElegido ? " elegida" : "");
+    b.dataset.emoji = e;
+    b.setAttribute("aria-pressed", String(!propio && e === emojiElegido));
+    b.textContent = e;
+    cont.append(b);
+  });
+}
+
+// Primer "carácter visible" de lo que escribieron (un emoji puede ocupar
+// varios caracteres internos, por ejemplo 👨‍👩‍👧).
+function primerEmoji(texto) {
+  const t = String(texto || "").trim();
+  if (!t) return "";
+  if (window.Intl && Intl.Segmenter) {
+    const [primero] = new Intl.Segmenter("es", { granularity: "grapheme" }).segment(t);
+    return primero ? primero.segment : "";
+  }
+  return [...t][0] || "";
+}
+
+function colorNuevo() {
+  const usados = new Set(CATEGORIAS.map((c) => c.color));
+  return PALETA_CATEGORIAS.find((c) => !usados.has(c)) ||
+    PALETA_CATEGORIAS[CATEGORIAS.length % PALETA_CATEGORIAS.length];
+}
+
+// "Comida japonesa" -> "comida-japonesa-k3f9"
+function nuevoIdCategoria(titulo) {
+  return nuevoId(titulo).slice(0, 50);
+}
+
+function guardarCategoria(e) {
+  e.preventDefault();
+  if (!puedeEditarLugares()) return;
+
+  const titulo = $("#categoria-nombre").value.trim().replace(/\s+/g, " ");
+  const grupo = $("#categoria-grupo").value;
+  const emoji = primerEmoji($("#categoria-emoji").value) || emojiElegido;
+
+  if (!titulo) return errorCategoria("El nombre es obligatorio.");
+  if (titulo.length > 40) return errorCategoria("El nombre es muy largo (máximo 40 letras).");
+  if (!GRUPOS_POR_ID[grupo]) return errorCategoria("Elige un bloque.");
+  if (!emoji || emoji.length > 16) return errorCategoria("Elige un emoji.");
+
+  const repetida = CATEGORIAS.find(
+    (c) => c.id !== catEdicion && normalizar(c.titulo) === normalizar(titulo)
+  );
+  if (repetida) return errorCategoria(`Ya existe "${repetida.titulo}".`);
+
+  const editando = Boolean(catEdicion);
+  const desdeLugar = catDesdeLugar;
+  const color = colorNuevo();
+  let id = catEdicion;
+
+  if (editando) {
+    if (!esAdmin()) return;
+    const anterior = CATEGORIAS_POR_ID[id];
+    if (!anterior) return errorCategoria("Esta categoría ya no existe.");
+    const datos = { titulo, emoji, grupo, color: anterior.color };
+    if (Number.isInteger(anterior.orden)) datos.orden = anterior.orden;
+    nube.editarCategoria(id, datos, quienSoy()).catch(errorAlGuardar);
+  } else {
+    id = nuevoIdCategoria(titulo);
+    nube.crearCategoria(id, { titulo, emoji, grupo, color }, quienSoy()).catch(errorAlGuardar);
+  }
+
+  cerrarModal(modalCategoria);
+  avisar(editando ? `Guardada: ${emoji} ${titulo}` : `Categoría creada: ${emoji} ${titulo} ✔`);
+
+  // Desde el formulario de lugar: dejarla elegida ahí.
+  // (La nube la manda de regreso al instante; si aún no llega, la ponemos ya.)
+  if (desdeLugar && modalLugar.classList.contains("abierto")) {
+    if (!CATEGORIAS_POR_ID[id]) {
+      establecerCategorias([...CATEGORIAS, { id, titulo, emoji, grupo, color }]);
+    }
+    llenarSelectCategorias(id);
+  }
+}
+
+function borrarCategoria() {
+  const cat = catEdicion && CATEGORIAS_POR_ID[catEdicion];
+  if (!cat || !esAdmin()) return;
+  if (lugaresEnCategoria(cat.id) > 0) return; // el botón ya está deshabilitado
+  if (!confirm(`¿Borrar la categoría "${cat.titulo}"?`)) return;
+  nube.borrarCategoria(cat.id).catch(errorAlGuardar);
+  cerrarModal(modalCategoria);
+  avisar(`Categoría borrada: ${cat.titulo}`);
+}
+
+$("#form-categoria").addEventListener("submit", guardarCategoria);
+
+// En el formulario de lugar, elegir "➕ Nueva categoría…" abre el formulario
+// de categoría (y el selector regresa a lo que tenía, por si cancelan).
+$("#lugar-categoria").addEventListener("change", (e) => {
+  const select = e.target;
+  if (select.value === "__nueva__") {
+    select.value = select.dataset.anterior || "";
+    abrirFormCategoria(null, { desdeLugar: true });
+  } else {
+    select.dataset.anterior = select.value;
+  }
+});
+
+// Escribir un emoji propio quita la selección de los sugeridos.
+$("#categoria-emoji").addEventListener("input", pintarEmojis);
+
+// ============================================================
 //  MODAL: MAPA
 // ============================================================
 const modalMapa = $("#modal-mapa");
@@ -1281,6 +1563,7 @@ function cerrarModal(m) {
   if (m === modalMapa) $("#modal-iframe").src = ""; // detener la carga del mapa
   if (m === modalDia) seleccion = null;
   if (m === modalAgregar) diaAgregar = null;
+  if (m === modalCategoria) { catEdicion = null; catDesdeLugar = false; }
   if (m === modalLugar) { edicion = null; destinoNuevo = null; busquedaFoto++; }
 }
 
@@ -1304,6 +1587,7 @@ function establecerSesion(nueva) {
   puedeEditar = sesion.estado === "miembro" || sesion.estado === "local";
   if (sesion.estado === "local") {
     aplicarViaje(VIAJE_LOCAL);
+    establecerCategorias(CATEGORIAS_BASE);
     establecerLugares(LUGARES_INICIALES);
     estado = cargarEstadoLocal();
     actualizarFotos();
@@ -1314,7 +1598,9 @@ function establecerSesion(nueva) {
   if (!esAdmin()) $("#btn-borrar-lugar").hidden = true;
   // "Reiniciar" solo en modo local: en la nube borraría el plan de todos.
   $("#btn-reiniciar").hidden = !puedeEditar || Boolean(nube);
+  if (!puedeEditarLugares()) [modalCategorias, modalCategoria].forEach(cerrarModal);
   refrescarTodo();
+  revisarSiembraCategorias();
 }
 
 function pintarSesion() {
@@ -1385,6 +1671,32 @@ function usarNube(api) {
   establecerLugares([]);
   $("#btn-reiniciar").hidden = true;
   refrescarTodo();
+}
+
+function actualizarCategorias(lista, desdeServidor) {
+  if (desdeServidor) categoriasDelServidor = true;
+  // Colección vacía: seguimos con las de la base (y el admin las sube).
+  establecerCategorias(lista.length ? lista : CATEGORIAS_BASE);
+  if (lista.length) categoriasSembradas = true;
+  establecerLugares(lugaresCrudos); // por si había lugares de una categoría que acaba de llegar
+  recalcularAgenda();
+  refrescarTodo();
+  categoriasVacias = lista.length === 0;
+  revisarSiembraCategorias();
+}
+let categoriasVacias = false;
+
+// La primera vez que el admin abre la app con la colección vacía, se suben
+// las 8 de la base. Solo una vez por carga (y solo si el servidor lo confirmó).
+let categoriasSembradas = false;
+function revisarSiembraCategorias() {
+  if (!nube || !esAdmin() || !categoriasDelServidor || !categoriasVacias) return;
+  if (categoriasSembradas || sembrandoCategorias) return;
+  sembrandoCategorias = true;
+  nube.sembrarCategorias(CATEGORIAS_BASE, quienSoy())
+    .then(() => { categoriasSembradas = true; })
+    .catch((err) => console.error("No se pudieron subir las categorías base:", err))
+    .finally(() => { sembrandoCategorias = false; });
 }
 
 function actualizarLugares(lista, desdeServidor) {
@@ -1542,7 +1854,8 @@ formViaje.addEventListener("submit", guardarViaje);
 
 // auth.js y nube.js (módulos) se comunican con la app por aquí.
 window.App = {
-  establecerSesion, usarNube, actualizarViaje, actualizarLugares, actualizarAgenda, actualizarVotos, errorNube,
+  establecerSesion, usarNube, actualizarViaje, actualizarCategorias, actualizarLugares,
+  actualizarAgenda, actualizarVotos, errorNube,
 };
 
 // ============================================================
@@ -1581,6 +1894,21 @@ document.addEventListener("click", (e) => {
   if (foto) {
     fotoElegida = foto.dataset.titulo;
     pintarOpcionesFoto($("#fotos-mensaje").textContent);
+    return;
+  }
+
+  // ----- Categorías (antes que ".agregar-nuevo", que comparte estilo) -----
+  if (t.closest("#btn-categorias")) { abrirCategorias(); return; }
+  if (t.closest("#btn-nueva-categoria")) { abrirFormCategoria(null); return; }
+  const editarCat = t.closest(".categoria-editar");
+  if (editarCat) { abrirFormCategoria(editarCat.dataset.id); return; }
+  if (t.closest("#btn-borrar-categoria")) { borrarCategoria(); return; }
+  if (t.closest("#btn-cancelar-categoria")) { cerrarModal(modalCategoria); return; }
+  const emoji = t.closest(".emoji-opcion");
+  if (emoji) {
+    emojiElegido = emoji.dataset.emoji;
+    $("#categoria-emoji").value = "";
+    pintarEmojis();
     return;
   }
 
@@ -1678,4 +2006,5 @@ botonLimpiar.addEventListener("click", () => {
 // Pintamos de inmediato; los lugares llegan de Firestore (o de
 // semilla.js en modo local) en cuanto auth.js decide el modo.
 fotosWiki = leerCacheFotos();
+establecerCategorias(CATEGORIAS_BASE); // hasta que lleguen las de Firestore
 refrescarTodo();

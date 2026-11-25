@@ -16,6 +16,11 @@ Publicada en https://vacations-planing.pamolitas.com (GitHub Pages).
   una nota fija (llegada, salida). **🔀 Mover / Quitar** cambia una actividad de día o
   la saca del plan.
 - **❤️ Votos**: lo que la familia votó, del más votado al menos.
+- **🏷️ Categorías** (pestaña Actividades, junto a "Nuevo lugar"): lista de categorías por
+  bloque. Cualquier miembro crea una nueva (nombre, emoji y en cuál de los 3 bloques va:
+  Actividades, Alimentos o Familia). También se crea desde el formulario de lugar, con
+  "➕ Nueva categoría…". Solo el admin edita o borra, y solo se borra si está vacía.
+  Las categorías se conservan al reiniciar el viaje.
 - **☰ Detalle en cada día** (pestaña "Los días"): cambia ese día a modo lista, un lugar
   debajo de otro, con su información a la derecha (categoría, horario, Google Maps,
   sitio web, votos, quién lo agregó). Ahí se puede:
@@ -45,6 +50,8 @@ Publicada en https://vacations-planing.pamolitas.com (GitHub Pages).
 | Agendar / mover / quitar       |            | ✔       | ✔     |
 | Agregar y editar lugares       |            | ✔       | ✔     |
 | Borrar lugares                 |            |         | ✔     |
+| Crear categorías               |            | ✔       | ✔     |
+| Editar / borrar categorías     |            |         | ✔     |
 | Configurar / reiniciar el viaje|            |         | ✔     |
 
 Esto lo hacen cumplir las reglas de Firestore (`firestore.rules`), no solo la interfaz.
@@ -67,6 +74,9 @@ viajes/dallas                 → { nombre, ciudad, inicio, fin, llegada, salida
                                   actualizadoPor, actualizadoEn }   (el viaje activo)
 viajes/dallas/lugares/{id}    → { nombre, categoria, mapa, mapsUrl, web, wiki, horario?,
                                   creadoPor, creadoEn, actualizadoPor, actualizadoEn }
+viajes/dallas/categorias/{id} → { titulo, emoji, color, grupo, orden?,
+                                  creadoPor, creadoEn, actualizadoPor, actualizadoEn }
+                                  (las 8 base se suben solas cuando el admin abre la app)
 viajes/dallas/agenda/{fecha}  → { lugares: [ids en orden], visitados?: [ids],
                                   actualizadoPor, actualizadoEn }
                                   (fecha = "2026-11-23", dentro del rango del viaje)
@@ -97,7 +107,7 @@ python -m http.server 8000
 
 - `index.html` — estructura de la página
 - `styles.css` — estilos (mobile-first)
-- `data.js` — categorías, grupos y el cálculo de los días a partir de las fechas
+- `data.js` — los 3 bloques, las categorías base y el cálculo de los días a partir de las fechas
 - `semilla.js` — la lista original de lugares de Dallas (referencia y modo local)
 - `app.js` — la lógica de la interfaz
 - `auth.js` — inicio de sesión con Google y arranque de Firebase

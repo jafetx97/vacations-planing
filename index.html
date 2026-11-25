@@ -202,6 +202,50 @@
     </div>
   </div>
 
+  <!-- Modal: lista de categorías (miembros). Editar/borrar: solo admin -->
+  <div id="modal-categorias" class="modal" aria-hidden="true">
+    <div class="modal-caja" role="dialog" aria-modal="true" aria-labelledby="categorias-titulo">
+      <button class="modal-cerrar" type="button" aria-label="Cerrar">✕</button>
+      <h3 id="categorias-titulo">🏷️ Categorías</h3>
+      <p id="categorias-sub" class="modal-sub"></p>
+      <div id="categorias-lista" class="agregar-lista"></div>
+    </div>
+  </div>
+
+  <!-- Modal: nueva / editar categoría (va después del de lugar para quedar encima) -->
+  <div id="modal-categoria" class="modal" aria-hidden="true">
+    <div class="modal-caja" role="dialog" aria-modal="true" aria-labelledby="categoria-titulo">
+      <button class="modal-cerrar" type="button" aria-label="Cerrar">✕</button>
+      <h3 id="categoria-titulo">Nueva categoría</h3>
+
+      <form id="form-categoria" class="form-lugar" novalidate>
+        <label for="categoria-nombre">Nombre <span class="obligatorio">*</span></label>
+        <input id="categoria-nombre" type="text" maxlength="40" required autocomplete="off"
+               placeholder="Ej. Japonés" />
+
+        <label for="categoria-grupo">Bloque</label>
+        <select id="categoria-grupo"></select>
+        <small class="ayuda-campo">En cuál de los bloques de la pestaña Actividades aparece.</small>
+
+        <fieldset class="fotos">
+          <legend>Emoji</legend>
+          <div id="categoria-emojis" class="emojis-opciones"></div>
+          <label for="categoria-emoji" class="emoji-propio-label">…o escribe otro</label>
+          <input id="categoria-emoji" type="text" maxlength="16" autocomplete="off" placeholder="🥟" />
+        </fieldset>
+
+        <p id="categoria-error" class="form-error" role="alert" hidden></p>
+
+        <div class="form-botones">
+          <button type="submit" class="btn-principal">Guardar</button>
+          <button id="btn-cancelar-categoria" type="button" class="btn-secundario">Cancelar</button>
+        </div>
+        <button id="btn-borrar-categoria" type="button" class="btn-quitar" hidden>🗑️ Borrar categoría</button>
+        <p id="categoria-borrar-nota" class="ayuda-campo" hidden></p>
+      </form>
+    </div>
+  </div>
+
   <!-- Aviso breve tras agregar/mover -->
   <div id="aviso" class="aviso" role="status" aria-live="polite"></div>
 

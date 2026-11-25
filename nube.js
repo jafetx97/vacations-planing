@@ -9,6 +9,10 @@
 //  viajes/{VIAJE}/lugares/{id}   -> { nombre, categoria, mapa, mapsUrl, web, wiki, horario,
 //                                     creadoPor, creadoEn, actualizadoPor, actualizadoEn }
 //
+//  viajes/{VIAJE}/categorias/{id}-> { titulo, emoji, color, grupo, orden?,
+//                                     creadoPor, creadoEn, actualizadoPor, actualizadoEn }
+//                                    (se conservan al reiniciar el viaje)
+//
 //  VIAJE es solo el ID interno del documento: no es el nombre del viaje
 //  (ese está en el campo "nombre" y se cambia desde la app).
 //
@@ -28,6 +32,18 @@ export function iniciarNube(db, fs) {
   const colAgenda = collection(db, "viajes", VIAJE, "agenda");
   const colVotos = collection(db, "viajes", VIAJE, "votos");
   const colLugares = collection(db, "viajes", VIAJE, "lugares");
+  const colCategorias = collection(db, "viajes", VIAJE, "categorias");
+
+  onSnapshot(
+    colCategorias,
+    { includeMetadataChanges: true },
+    (snap) => {
+      const lista = [];
+      snap.forEach((d) => lista.push({ ...d.data(), id: d.id }));
+      window.App.actualizarCategorias(lista, !snap.metadata.fromCache);
+    },
+    (err) => window.App.errorNube(err)
+  );
 
   // ---------- Escuchar cambios (cualquiera puede leer) ----------
   // includeMetadataChanges: así sabemos cuándo ya llegó la versión del
@@ -172,6 +188,38 @@ export function iniciarNube(db, fs) {
           { merge: true });
       });
       await lote.commit();
+    },
+
+    // ---------- Categorías ----------
+    // datos: { titulo, emoji, color, grupo } (+ orden en las de la base)
+    async crearCategoria(id, datos, quien) {
+      await setDoc(doc(colCategorias, id), {
+        ...datos,
+        creadoPor: quien.nombre,
+        creadoEn: serverTimestamp(),
+        actualizadoPor: quien.nombre,
+        actualizadoEn: serverTimestamp(),
+      });
+    },
+
+    // Solo el admin (lo validan las reglas).
+    async editarCategoria(id, datos, quien) {
+      await updateDoc(doc(colCategorias, id), {
+        ...datos,
+        actualizadoPor: quien.nombre,
+        actualizadoEn: serverTimestamp(),
+      });
+    },
+
+    // Solo el admin, y la app solo lo permite si no tiene lugares.
+    async borrarCategoria(id) {
+      await deleteDoc(doc(colCategorias, id));
+    },
+
+    // Sube las categorías base (la primera vez). Mismos IDs de siempre,
+    // así los lugares que ya existen siguen en su categoría.
+    async sembrarCategorias(lista, quien) {
+      await Promise.all(lista.map(({ id, ...datos }) => this.crearCategoria(id, datos, quien)));
     },
 
     // ---------- Viaje ----------

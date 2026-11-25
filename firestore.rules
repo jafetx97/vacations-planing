@@ -12,6 +12,8 @@ rules_version = '2';
 //    fechas). Cualquiera lee; SOLO el admin la escribe (reiniciar viaje).
 //  - viajes/{viaje}/lugares/{id}: cualquiera lee; los miembros crean
 //    y editan; SOLO el admin borra.
+//  - viajes/{viaje}/categorias/{id}: cualquiera lee; los miembros crean;
+//    SOLO el admin edita y borra.
 //  - viajes/{viaje}/agenda/{fecha}: cualquiera lee; los miembros escriben
 //    (orden de los lugares y cuáles ya se visitaron), pero solo en fechas
 //    dentro del viaje. SOLO el admin borra.
@@ -54,10 +56,31 @@ service cloud.firestore {
       return f is string && f.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
     }
 
-    // Debe coincidir con CATEGORIAS en data.js.
-    function categoriaValida(c) {
-      return c in ['familia', 'actividades', 'desayunos', 'comida-rapida',
-                   'restaurantes', 'mexicano', 'casero', 'cenas'];
+    // Las 8 categorías base (CATEGORIAS_BASE en data.js) siempre valen, aunque
+    // todavía no se hayan subido; cualquier otra debe existir en la colección.
+    function categoriaValida(c, viajeId) {
+      return c is string && (
+        c in ['familia', 'actividades', 'desayunos', 'comida-rapida',
+              'restaurantes', 'mexicano', 'casero', 'cenas']
+        || exists(/databases/$(database)/documents/viajes/$(viajeId)/categorias/$(c)));
+    }
+
+    // Los 3 bloques fijos (GRUPOS en data.js).
+    function grupoValido(g) {
+      return g in ['actividades', 'alimentos', 'familia'];
+    }
+
+    function categoriaDocValida(d) {
+      return d.keys().hasOnly(['titulo', 'emoji', 'color', 'grupo', 'orden',
+                               'creadoPor', 'creadoEn', 'actualizadoPor', 'actualizadoEn'])
+        && textoValido(d.titulo, 40) && d.titulo.size() > 0
+        && textoValido(d.emoji, 16) && d.emoji.size() > 0
+        && d.color is string && d.color.matches('^[0-9a-f]{6}$')
+        && grupoValido(d.grupo)
+        && (!('orden' in d) || d.orden is int)
+        && textoValido(d.creadoPor, 60)
+        && textoValido(d.actualizadoPor, 60)
+        && d.actualizadoEn == request.time;
     }
 
     // Vacío, o un enlace https de Google Maps.
@@ -72,12 +95,12 @@ service cloud.firestore {
     }
 
     // "horario" es opcional (los lugares viejos no lo tienen).
-    function lugarValido(d) {
+    function lugarValido(d, viajeId) {
       return d.keys().hasOnly(['nombre', 'categoria', 'mapa', 'mapsUrl', 'web', 'wiki', 'horario',
                                'creadoPor', 'creadoEn', 'actualizadoPor', 'actualizadoEn'])
         && textoValido(d.get('horario', ''), 120)
         && textoValido(d.nombre, 60) && d.nombre.size() > 0
-        && categoriaValida(d.categoria)
+        && categoriaValida(d.categoria, viajeId)
         && textoValido(d.mapa, 120)
         && textoValido(d.mapsUrl, 300) && mapsUrlValida(d.mapsUrl)
         && textoValido(d.web, 300) && webValida(d.web)
@@ -118,11 +141,26 @@ service cloud.firestore {
         allow read: if true;
         allow create: if esMiembro()
           && lugarId.matches('^[a-z0-9-]{1,60}$')
-          && lugarValido(request.resource.data)
+          && lugarValido(request.resource.data, viajeId)
           && request.resource.data.creadoEn == request.time;
         // Al editar no se puede cambiar quién ni cuándo lo creó.
         allow update: if esMiembro()
-          && lugarValido(request.resource.data)
+          && lugarValido(request.resource.data, viajeId)
+          && request.resource.data.creadoPor == resource.data.creadoPor
+          && request.resource.data.creadoEn == resource.data.creadoEn;
+        allow delete: if esAdmin();
+      }
+
+      // Categorías: los miembros crean; SOLO el admin edita y borra.
+      // (Que no se borre una categoría con lugares lo cuida la app.)
+      match /categorias/{catId} {
+        allow read: if true;
+        allow create: if esMiembro()
+          && catId.matches('^[a-z0-9-]{1,50}$')
+          && categoriaDocValida(request.resource.data)
+          && request.resource.data.creadoEn == request.time;
+        allow update: if esAdmin()
+          && categoriaDocValida(request.resource.data)
           && request.resource.data.creadoPor == resource.data.creadoPor
           && request.resource.data.creadoEn == resource.data.creadoEn;
         allow delete: if esAdmin();

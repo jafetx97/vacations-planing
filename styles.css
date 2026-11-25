@@ -912,3 +912,51 @@ main { padding: 16px; max-width: 900px; margin: 0 auto; }
   .detalle-foto { width: 64px; height: 64px; }
   .detalle-datos { border-left: 1px solid var(--borde); padding-left: 12px; }
 }
+
+/* ============================================================
+   Categorías: botón en la barra, lista y formulario
+   ============================================================ */
+.barra-botones { display: flex; flex-wrap: wrap; gap: 8px; }
+.btn-categorias { border-color: #9aa5b1; color: var(--texto); }
+.btn-categorias:hover { background: #f4f6f8; }
+
+.categoria-fila {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--borde);
+  background: #fff;
+  border-radius: 12px;
+  padding: 8px 10px;
+}
+.categoria-nombre { flex: 1; font-weight: 600; font-size: 0.9rem; overflow-wrap: anywhere; }
+.categoria-conteo { font-size: 0.75rem; color: var(--gris); white-space: nowrap; }
+.categoria-editar {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--borde);
+  border-radius: 50%;
+  background: #fff;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.categoria-editar:hover { background: #fff6ec; }
+.categoria-editar:focus-visible { outline: 3px solid #2980b9; outline-offset: 2px; }
+
+.emojis-opciones { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; }
+.emoji-opcion {
+  aspect-ratio: 1;
+  border: 2px solid var(--borde);
+  border-radius: 10px;
+  background: #fff;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 0;
+}
+.emoji-opcion:hover { background: #fff6ec; }
+.emoji-opcion.elegida { border-color: var(--naranja); background: #fff6ec; }
+.emoji-opcion:focus-visible { outline: 3px solid #2980b9; outline-offset: 2px; }
+.form-lugar .emoji-propio-label { font-weight: 400; color: var(--gris); margin-top: 10px; }
+#categoria-emoji { max-width: 120px; }
+#modal-categoria .modal-caja, #modal-categorias .modal-caja { max-height: 92vh; overflow-y: auto; }
+.btn-quitar:disabled { opacity: 0.5; cursor: default; }

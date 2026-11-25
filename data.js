@@ -1,7 +1,8 @@
 // ============================================================
-//  CONFIGURACIÓN FIJA DE LA APP
-//  Categorías, grupos y días. Los LUGARES no viven aquí: están en
-//  Firestore (y la lista original, en semilla.js).
+//  CONFIGURACIÓN DE LA APP
+//  Grupos, categorías base y días. Los LUGARES y las categorías que
+//  crea la familia viven en Firestore (la lista original de lugares,
+//  en semilla.js).
 //  Los DÍAS se calculan a partir de las fechas del viaje, que se
 //  configuran desde la app (botón "Reiniciar viaje", solo admin).
 // ============================================================
@@ -12,36 +13,64 @@ function placeholder(texto, color) {
   return `https://placehold.co/600x400/${color}/ffffff?text=${t}&font=poppins`;
 }
 
-// Las categorías son fijas. Si agregas una, agrégala también en
-// firestore.rules (función categoriaValida) y en algún GRUPO.
-const CATEGORIAS = [
-  { id: "familia",       titulo: "Familia",                      emoji: "👨‍👩‍👧", color: "e67e22" },
-  { id: "actividades",   titulo: "Actividades",                  emoji: "🎢", color: "2980b9" },
-  { id: "desayunos",     titulo: "Desayunos",                    emoji: "🍳", color: "f39c12" },
-  { id: "comida-rapida", titulo: "Comida rápida / Hamburguesas", emoji: "🍔", color: "c0392b" },
-  { id: "restaurantes",  titulo: "Restaurantes",                 emoji: "🍽️", color: "27ae60" },
-  { id: "mexicano",      titulo: "Mexicano",                     emoji: "🌮", color: "8e44ad" },
-  { id: "casero",        titulo: "Casero",                       emoji: "🏠", color: "16a085" },
-  { id: "cenas",         titulo: "Cenas",                        emoji: "🌙", color: "34495e" },
-];
-
-const CATEGORIAS_POR_ID = {};
-CATEGORIAS.forEach((c) => (CATEGORIAS_POR_ID[c.id] = c));
-
 // ============================================================
-//  GRUPOS (se pueden expandir / retraer en la pestaña Actividades)
-//  Cada grupo junta una o varias categorías de arriba.
+//  GRUPOS: los 3 bloques fijos de la pestaña Actividades (se abren y
+//  cierran). Cada categoría pertenece a uno. Si agregas un grupo,
+//  agrégalo también en firestore.rules (función grupoValido).
 // ============================================================
 const GRUPOS = [
-  { id: "actividades", titulo: "Actividades", emoji: "🎢", categorias: ["actividades"] },
-  {
-    id: "alimentos",
-    titulo: "Alimentos",
-    emoji: "🍴",
-    categorias: ["desayunos", "comida-rapida", "restaurantes", "mexicano", "casero", "cenas"],
-  },
-  { id: "familia",     titulo: "Familia",     emoji: "👨‍👩‍👧", categorias: ["familia"] },
+  { id: "actividades", titulo: "Actividades", emoji: "🎢" },
+  { id: "alimentos",   titulo: "Alimentos",   emoji: "🍴" },
+  { id: "familia",     titulo: "Familia",     emoji: "👨‍👩‍👧" },
 ];
+const GRUPOS_POR_ID = {};
+GRUPOS.forEach((g) => (GRUPOS_POR_ID[g.id] = g));
+
+// ============================================================
+//  CATEGORÍAS
+//  Viven en Firestore (viajes/dallas/categorias) y la familia puede
+//  crear nuevas desde la app. Estas 8 son la base: se suben solas la
+//  primera vez que el admin abre la app, y se usan mientras tanto (y en
+//  modo local). "orden" acomoda las de la base; las nuevas van después,
+//  por nombre.
+// ============================================================
+const CATEGORIAS_BASE = [
+  { id: "familia",       titulo: "Familia",                      emoji: "👨‍👩‍👧", color: "e67e22", grupo: "familia",     orden: 0 },
+  { id: "actividades",   titulo: "Actividades",                  emoji: "🎢", color: "2980b9", grupo: "actividades", orden: 1 },
+  { id: "desayunos",     titulo: "Desayunos",                    emoji: "🍳", color: "f39c12", grupo: "alimentos",   orden: 2 },
+  { id: "comida-rapida", titulo: "Comida rápida / Hamburguesas", emoji: "🍔", color: "c0392b", grupo: "alimentos",   orden: 3 },
+  { id: "restaurantes",  titulo: "Restaurantes",                 emoji: "🍽️", color: "27ae60", grupo: "alimentos",   orden: 4 },
+  { id: "mexicano",      titulo: "Mexicano",                     emoji: "🌮", color: "8e44ad", grupo: "alimentos",   orden: 5 },
+  { id: "casero",        titulo: "Casero",                       emoji: "🏠", color: "16a085", grupo: "alimentos",   orden: 6 },
+  { id: "cenas",         titulo: "Cenas",                        emoji: "🌙", color: "34495e", grupo: "alimentos",   orden: 7 },
+];
+
+// Colores para las categorías nuevas (hex sin "#", texto blanco encima).
+const PALETA_CATEGORIAS = [
+  "d35400", "1abc9c", "2c3e50", "9b59b6", "e74c3c", "3498db",
+  "b9770e", "117a65", "7d3c98", "a93226", "1f618d", "5d6d7e",
+];
+
+// Emojis sugeridos al crear una categoría (también se puede escribir otro).
+const EMOJIS_SUGERIDOS = [
+  "🍣", "🍕", "☕", "🍦", "🍺", "🥗", "🛍️", "🏞️",
+  "🏛️", "🎭", "🎡", "🏖️", "⛪", "🎵", "🚗", "⭐",
+];
+
+// Lista que usa la app (se llena con establecerCategorias en app.js).
+const CATEGORIAS = [];
+const CATEGORIAS_POR_ID = {};
+
+// Ordenadas dentro de su grupo: primero las de la base, luego por nombre.
+function ordenarCategorias(a, b) {
+  const oa = Number.isInteger(a.orden) ? a.orden : 1000;
+  const ob = Number.isInteger(b.orden) ? b.orden : 1000;
+  return oa - ob || a.titulo.localeCompare(b.titulo, "es");
+}
+
+function categoriasDeGrupo(grupoId) {
+  return CATEGORIAS.filter((c) => c.grupo === grupoId).sort(ordenarCategorias);
+}
 
 // ============================================================
 //  VIAJE Y DÍAS
