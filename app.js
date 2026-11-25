@@ -10,10 +10,13 @@
 const CLAVE_GUARDADO = "vacaciones-dallas-v1";
 let ciudad = ""; // para buscar en Maps los lugares nuevos (viene del viaje)
 
+// agenda:    { fecha: [ids en orden] }
+// visitados: { fecha: [ids ya visitados ese día] }
 function estadoVacio() {
   const agenda = {};
-  DIAS.forEach((d) => (agenda[d.id] = []));
-  return { agenda, favoritos: [] };
+  const visitados = {};
+  DIAS.forEach((d) => { agenda[d.id] = []; visitados[d.id] = []; });
+  return { agenda, visitados, favoritos: [] };
 }
 
 // Plan guardado en este navegador (modo local, o para migrarlo a la nube).
@@ -25,6 +28,8 @@ function cargarEstadoLocal() {
     if (guardado && guardado.agenda && Array.isArray(guardado.favoritos)) {
       DIAS.forEach((d) => {
         est.agenda[d.id] = (guardado.agenda[d.id] || []).filter(existe);
+        const v = guardado.visitados && Array.isArray(guardado.visitados[d.id]) ? guardado.visitados[d.id] : [];
+        est.visitados[d.id] = v.filter((id) => est.agenda[d.id].includes(id));
       });
       est.favoritos = guardado.favoritos.filter(existe);
     }
@@ -46,6 +51,7 @@ let estado = estadoVacio();
 let nube = null;               // API de nube.js cuando Firebase está activo
 let votos = {};                // { uid: { nombre, lugares: [ids] } }
 let agendaCruda = {};          // agenda tal cual llega de Firestore
+let visitadosCrudos = {};      // { fecha: [ids] } tal cual llega de Firestore
 let viaje = null;              // configuración del viaje (null = todavía no hay)
 let viajeDelServidor = false;  // el servidor ya confirmó si hay viaje o no
 let lugaresRecibidos = false;  // ya llegó algo (caché o servidor)
@@ -107,6 +113,7 @@ function establecerLugares(lista) {
       web: typeof l.web === "string" ? l.web : "",
       wiki: typeof l.wiki === "string" ? l.wiki : "",
       creadoPor: typeof l.creadoPor === "string" ? l.creadoPor : "",
+      horario: typeof l.horario === "string" ? l.horario : "",
       emoji: cat.emoji,
       respaldo: placeholder(String(l.nombre), cat.color),
     };
@@ -146,10 +153,15 @@ function lugaresDeCategoria(catId) {
 // agenda (así un lugar borrado desaparece de los días).
 function recalcularAgenda() {
   estado.agenda = {};
+  estado.visitados = {};
   DIAS.forEach((d) => {
     estado.agenda[d.id] = (agendaCruda[d.id] || []).filter((id) => LUGARES_POR_ID[id]);
+    estado.visitados[d.id] = (visitadosCrudos[d.id] || []).filter((id) => estado.agenda[d.id].includes(id));
   });
 }
+
+const esVisitado = (diaId, lugarId) =>
+  Boolean(estado.visitados[diaId] && estado.visitados[diaId].includes(lugarId));
 
 // ¿Yo voté por este lugar?
 function esFavorito(id) {
@@ -193,7 +205,13 @@ function pintarEncabezado() {
   $("#buscador").hidden = sinViaje();
 }
 
+// Mientras alguien arrastra, no repintamos (se perdería lo que está moviendo).
+// Lo que llegue mientras tanto se pinta al soltar.
+let arrastrando = false;
+let repintarAlSoltar = false;
+
 function refrescarTodo() {
+  if (arrastrando) { repintarAlSoltar = true; return; }
   pintarEncabezado();
   pintarBarra();
   pintarActividades();
@@ -550,12 +568,20 @@ function pintarDias() {
     if (busqueda && ids.length === 0) return;
     hayResultados = true;
 
+    const expandido = diasExpandidos.has(dia.id);
     const el = document.createElement("div");
-    el.className = "dia";
+    el.className = "dia" + (expandido ? " expandido" : "");
     el.innerHTML = `
       <div class="dia-cabecera">
         <span>${escapar(dia.etiqueta)}</span>
-        ${dia.fijo ? `<span class="fijo">${escapar(dia.fijo)}</span>` : ""}
+        <span class="dia-cabecera-der">
+          ${dia.fijo ? `<span class="fijo">${escapar(dia.fijo)}</span>` : ""}
+          <button type="button" class="dia-expandir" data-dia="${escapar(dia.id)}"
+                  aria-expanded="${expandido}"
+                  aria-label="${expandido ? "Volver a la vista de tarjetas" : "Ver en lista con detalles"} del ${escapar(dia.etiqueta)}">
+            ${expandido ? "▦ Tarjetas" : "☰ Detalle"}
+          </button>
+        </span>
       </div>
       <div class="dia-lista"></div>
       ${puedeEditar
@@ -568,6 +594,8 @@ function pintarDias() {
     const lista = $(".dia-lista", el);
     if (ids.length === 0) {
       lista.innerHTML = `<p class="dia-vacio">${puedeEditar ? "Nada todavía. Toca + para agregar algo." : "Nada todavía."}</p>`;
+    } else if (expandido) {
+      lista.appendChild(crearListaDetalle(dia, ids));
     } else {
       const grid = document.createElement("div");
       grid.className = "grid";
@@ -578,6 +606,145 @@ function pintarDias() {
   });
 
   if (busqueda && !hayResultados) cont.innerHTML = sinResultados();
+}
+
+// ============================================================
+//  DÍA EXPANDIDO: lista con detalles, orden y visitados
+// ============================================================
+// Qué días están expandidos (se recuerda en este dispositivo).
+const CLAVE_EXPANDIDOS = "vacaciones-dias-expandidos";
+let diasExpandidos = new Set();
+try {
+  const g = JSON.parse(localStorage.getItem(CLAVE_EXPANDIDOS) || "[]");
+  if (Array.isArray(g)) diasExpandidos = new Set(g);
+} catch (e) {
+  /* si está corrupto, ninguno expandido */
+}
+
+function alternarExpandido(diaId) {
+  if (!DIAS_POR_ID[diaId]) return;
+  if (diasExpandidos.has(diaId)) diasExpandidos.delete(diaId);
+  else diasExpandidos.add(diaId);
+  localStorage.setItem(CLAVE_EXPANDIDOS, JSON.stringify([...diasExpandidos]));
+  pintarDias();
+  // Que el botón conserve el foco tras repintar (teclado / lector de pantalla).
+  const b = $(`.dia-expandir[data-dia="${CSS.escape(diaId)}"]`);
+  if (b) b.focus();
+}
+
+// Una fila de detalle: dato con su ícono (el texto ya va escapado).
+const filaDato = (icono, html) => `<li><span aria-hidden="true">${icono}</span> ${html}</li>`;
+
+function crearListaDetalle(dia, ids) {
+  // Con búsqueda activa se ve solo una parte del día: no se puede reordenar.
+  const sePuedeOrdenar = puedeEditar && !busqueda && ids.length > 1;
+
+  const ol = document.createElement("ol");
+  ol.className = "detalle-lista";
+  ol.dataset.dia = dia.id;
+
+  ids.forEach((id) => {
+    const lugar = LUGARES_POR_ID[id];
+    const visitado = esVisitado(dia.id, id);
+    const cat = CATEGORIAS_POR_ID[lugar.categoria];
+    const maps = urlSegura(lugar.mapsUrl) ||
+      (lugar.mapa ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(lugar.mapa)}` : "");
+    const web = urlSegura(lugar.web);
+    const votantes = votantesDe(id);
+
+    const datos = [
+      cat ? filaDato(cat.emoji, escapar(cat.titulo)) : "",
+      lugar.horario ? filaDato("🕒", escapar(lugar.horario)) : "",
+      maps ? filaDato("📍", `<a href="${escapar(maps)}" target="_blank" rel="noopener noreferrer">Abrir en Google Maps</a>`) : "",
+      web ? filaDato("🌐", `<a href="${escapar(web)}" target="_blank" rel="noopener noreferrer">${escapar(new URL(web).hostname.replace(/^www\./, ""))}</a>`) : "",
+      votantes.length ? filaDato("❤️", escapar(votantes.join(", "))) : "",
+      lugar.creadoPor ? filaDato("👤", `Agregado por ${escapar(lugar.creadoPor)}`) : "",
+    ].join("");
+
+    const li = document.createElement("li");
+    li.className = "detalle-item" + (visitado ? " visitado" : "");
+    li.dataset.id = id;
+    li.innerHTML = `
+      <div class="detalle-controles">
+        <input type="checkbox" class="visitado-check" data-dia="${escapar(dia.id)}" data-id="${escapar(id)}"
+               ${visitado ? "checked" : ""} ${puedeEditar ? "" : "disabled"}
+               aria-label="${escapar(lugar.nombre)}: ${visitado ? "ya visitado" : "marcar como visitado"}" />
+        ${sePuedeOrdenar
+          ? `<span class="detalle-agarre" aria-hidden="true" title="Arrastra para cambiar el orden">⠿</span>`
+          : ""}
+      </div>
+      <img class="detalle-foto" src="${escapar(fotoDe(lugar))}" alt="" loading="lazy" />
+      <div class="detalle-principal">
+        <div class="detalle-nombre">${escapar(lugar.nombre)}</div>
+        ${puedeEditar
+          ? `<button class="dia-btn mover detalle-mover" data-id="${escapar(id)}" data-dia="${escapar(dia.id)}">🔀 Mover / Quitar</button>`
+          : ""}
+      </div>
+      <ul class="detalle-datos">${datos || filaDato("ℹ️", "Sin más información")}</ul>`;
+
+    const img = $(".detalle-foto", li);
+    img.addEventListener("error", () => {
+      if (img.src !== lugar.respaldo) img.src = lugar.respaldo;
+    });
+    ol.appendChild(li);
+  });
+
+  const cont = document.createElement("div");
+  cont.append(ol);
+  if (busqueda && puedeEditar && ids.length > 1) {
+    const nota = document.createElement("p");
+    nota.className = "ayuda-campo";
+    nota.textContent = "Borra la búsqueda para poder cambiar el orden.";
+    cont.append(nota);
+  }
+
+  if (sePuedeOrdenar && window.Sortable) {
+    Sortable.create(ol, {
+      handle: ".detalle-agarre",   // solo se arrastra desde ⠿ (el scroll no mueve nada)
+      animation: 150,
+      ghostClass: "detalle-fantasma",
+      onStart: () => { arrastrando = true; },
+      onEnd: (evt) => {
+        arrastrando = false;
+        const nuevoOrden = $$(".detalle-item", ol).map((n) => n.dataset.id);
+        if (evt.oldIndex !== evt.newIndex) reordenarDia(dia.id, nuevoOrden);
+        if (repintarAlSoltar) { repintarAlSoltar = false; refrescarTodo(); }
+      },
+    });
+  }
+  return cont;
+}
+
+function reordenarDia(diaId, nuevoOrden) {
+  if (!puedeEditar || !DIAS_POR_ID[diaId]) return;
+  if (nube) {
+    nube.reordenarDia(diaId, nuevoOrden, quienSoy()).catch((err) => {
+      console.error("No se pudo cambiar el orden:", err);
+      avisar(err && err.code === "permission-denied"
+        ? "No tienes permiso para hacer ese cambio."
+        : "No se pudo guardar el orden (se necesita internet). Intenta de nuevo.");
+      refrescarTodo(); // regresa al orden que tiene la nube
+    });
+    return;
+  }
+  estado.agenda[diaId] = nuevoOrden.filter((id) => estado.agenda[diaId].includes(id));
+  guardarLocal();
+  refrescarTodo();
+}
+
+function marcarVisitado(diaId, lugarId, si) {
+  if (!puedeEditar || !DIAS_POR_ID[diaId] || !LUGARES_POR_ID[lugarId]) return;
+  if (nube) {
+    nube.marcarVisitado(diaId, lugarId, si, quienSoy()).catch((err) => {
+      errorAlGuardar(err);
+      refrescarTodo();
+    });
+    return;
+  }
+  const v = estado.visitados[diaId] || [];
+  estado.visitados[diaId] = si ? [...new Set([...v, lugarId])] : v.filter((id) => id !== lugarId);
+  guardarLocal();
+  refrescarTodo();
 }
 
 // ============================================================
@@ -639,7 +806,10 @@ function cambiarAgenda(lugarId, { quitarDe = null, agregarA = null }) {
     nube.cambiarAgenda(lugarId, quitarDe, agregarA, quienSoy()).catch(errorAlGuardar);
     return;
   }
-  if (quitarDe) estado.agenda[quitarDe] = estado.agenda[quitarDe].filter((id) => id !== lugarId);
+  if (quitarDe) {
+    estado.agenda[quitarDe] = estado.agenda[quitarDe].filter((id) => id !== lugarId);
+    estado.visitados[quitarDe] = (estado.visitados[quitarDe] || []).filter((id) => id !== lugarId);
+  }
   if (agregarA && !estado.agenda[agregarA].includes(lugarId)) estado.agenda[agregarA].push(lugarId);
   guardarLocal();
   refrescarTodo();
@@ -854,6 +1024,7 @@ function abrirFormLugar(id = null, diaDestino = null) {
   $("#lugar-categoria").value = lugar ? lugar.categoria : "actividades";
   $("#lugar-maps").value = lugar ? lugar.mapsUrl : "";
   $("#lugar-web").value = lugar ? lugar.web : "";
+  $("#lugar-horario").value = lugar ? lugar.horario : "";
   $("#lugar-creado").textContent = lugar && lugar.creadoPor ? `Agregado por ${lugar.creadoPor}` : "";
   mostrarError("");
 
@@ -1018,7 +1189,10 @@ function guardarLugar(e) {
     ? anterior.mapa
     : maps.url ? conCiudad(nombre) : "";
 
-  const datos = { nombre, categoria, mapa, mapsUrl: maps.url, web: web.url, wiki: fotoElegida };
+  const horario = $("#lugar-horario").value.trim().replace(/\s+/g, " ");
+  if (horario.length > 120) return mostrarError("El horario es muy largo (máximo 120 letras).");
+
+  const datos = { nombre, categoria, mapa, mapsUrl: maps.url, web: web.url, wiki: fotoElegida, horario };
 
   // Guardamos la foto elegida en caché para mostrarla de inmediato.
   const opcion = opcionesFoto.find((o) => o.titulo === fotoElegida);
@@ -1253,8 +1427,9 @@ function actualizarViaje(cfg, desdeServidor) {
   refrescarTodo();
 }
 
-function actualizarAgenda(agendaNube) {
+function actualizarAgenda(agendaNube, visitadosNube = {}) {
   agendaCruda = agendaNube;
+  visitadosCrudos = visitadosNube;
   recalcularAgenda();
   refrescarTodo();
 }
@@ -1409,6 +1584,9 @@ document.addEventListener("click", (e) => {
     return;
   }
 
+  const expandir = t.closest(".dia-expandir");
+  if (expandir) { alternarExpandido(expandir.dataset.dia); return; }
+
   const mas = t.closest(".dia-mas");
   if (mas) { abrirAgregar(mas.dataset.dia); return; }
 
@@ -1450,6 +1628,12 @@ document.addEventListener("click", (e) => {
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") $$(".modal.abierto").forEach(cerrarModal);
+});
+
+// Casilla de "visitado" en la vista de detalle de un día.
+document.addEventListener("change", (e) => {
+  const check = e.target.closest(".visitado-check");
+  if (check) marcarVisitado(check.dataset.dia, check.dataset.id, check.checked);
 });
 
 // ============================================================

@@ -16,6 +16,12 @@ Publicada en https://vacations-planing.pamolitas.com (GitHub Pages).
   una nota fija (llegada, salida). **🔀 Mover / Quitar** cambia una actividad de día o
   la saca del plan.
 - **❤️ Votos**: lo que la familia votó, del más votado al menos.
+- **☰ Detalle en cada día** (pestaña "Los días"): cambia ese día a modo lista, un lugar
+  debajo de otro, con su información a la derecha (categoría, horario, Google Maps,
+  sitio web, votos, quién lo agregó). Ahí se puede:
+  - **Arrastrar** desde ⠿ para cambiar el orden del día (necesita internet).
+  - **Marcar como visitado** con la casilla. Es por día y lo ve toda la familia.
+  "▦ Tarjetas" regresa a la vista normal. Cada navegador recuerda qué días dejaste expandidos.
 - **+ en cada día** (pestaña "Los días"): abre la lista de lugares que todavía no están
   en ningún día; tocas los que quieras (se pueden agregar varios seguidos) y "Listo".
   Al final de esa lista, **+ Nuevo lugar** crea un lugar y lo agrega a ese día.
@@ -59,9 +65,10 @@ Esto lo hacen cumplir las reglas de Firestore (`firestore.rules`), no solo la in
 miembros/{correo}             → { nombre, admin? }
 viajes/dallas                 → { nombre, ciudad, inicio, fin, llegada, salida,
                                   actualizadoPor, actualizadoEn }   (el viaje activo)
-viajes/dallas/lugares/{id}    → { nombre, categoria, mapa, mapsUrl, web, wiki,
+viajes/dallas/lugares/{id}    → { nombre, categoria, mapa, mapsUrl, web, wiki, horario?,
                                   creadoPor, creadoEn, actualizadoPor, actualizadoEn }
-viajes/dallas/agenda/{fecha}  → { lugares: [ids], actualizadoPor, actualizadoEn }
+viajes/dallas/agenda/{fecha}  → { lugares: [ids en orden], visitados?: [ids],
+                                  actualizadoPor, actualizadoEn }
                                   (fecha = "2026-11-23", dentro del rango del viaje)
 viajes/dallas/votos/{uid}     → { nombre, lugares: [ids], actualizadoEn }
 ```

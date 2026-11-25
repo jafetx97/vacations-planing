@@ -179,6 +179,10 @@
         <input id="lugar-web" type="url" inputmode="url" autocomplete="off"
                placeholder="https://..." />
 
+        <label for="lugar-horario">Horario <span class="opcional">(opcional)</span></label>
+        <input id="lugar-horario" type="text" maxlength="120" autocomplete="off"
+               placeholder="Ej. Lun–Sáb 9 am – 10 pm, cierra domingos" />
+
         <fieldset class="fotos">
           <legend>Foto</legend>
           <button id="btn-buscar-foto" type="button" class="btn-secundario">🔍 Buscar foto en Wikipedia</button>
@@ -201,6 +205,8 @@
   <!-- Aviso breve tras agregar/mover -->
   <div id="aviso" class="aviso" role="status" aria-live="polite"></div>
 
+  <!-- Arrastrar para ordenar (solo dentro de un día expandido) -->
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.7/Sortable.min.js"></script>
   <script src="data.js"></script>
   <script src="semilla.js"></script>
   <script src="app.js"></script>

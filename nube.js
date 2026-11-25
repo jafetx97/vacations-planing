@@ -3,9 +3,10 @@
 //
 //  viajes/{VIAJE}                -> { nombre, ciudad, inicio, fin, llegada, salida,
 //                                     actualizadoPor, actualizadoEn }   (el viaje activo)
-//  viajes/{VIAJE}/agenda/{fecha} -> { lugares: [ids], actualizadoPor, actualizadoEn }
+//  viajes/{VIAJE}/agenda/{fecha} -> { lugares: [ids en orden], visitados: [ids],
+//                                     actualizadoPor, actualizadoEn }
 //  viajes/{VIAJE}/votos/{uid}    -> { nombre, lugares: [ids], actualizadoEn }
-//  viajes/{VIAJE}/lugares/{id}   -> { nombre, categoria, mapa, mapsUrl, web, wiki,
+//  viajes/{VIAJE}/lugares/{id}   -> { nombre, categoria, mapa, mapsUrl, web, wiki, horario,
 //                                     creadoPor, creadoEn, actualizadoPor, actualizadoEn }
 //
 //  VIAJE es solo el ID interno del documento: no es el nombre del viaje
@@ -20,7 +21,7 @@ const VIAJE = "dallas";
 export function iniciarNube(db, fs) {
   const {
     collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, getDocs, writeBatch,
-    arrayUnion, arrayRemove, serverTimestamp,
+    runTransaction, arrayUnion, arrayRemove, serverTimestamp,
   } = fs;
 
   const docViaje = doc(db, "viajes", VIAJE);
@@ -55,11 +56,13 @@ export function iniciarNube(db, fs) {
     colAgenda,
     (snap) => {
       const agenda = {};
+      const visitados = {};
       snap.forEach((d) => {
-        const l = d.data().lugares;
+        const { lugares: l, visitados: v } = d.data();
         agenda[d.id] = Array.isArray(l) ? l : [];
+        visitados[d.id] = Array.isArray(v) ? v : [];
       });
-      window.App.actualizarAgenda(agenda);
+      window.App.actualizarAgenda(agenda, visitados);
     },
     (err) => window.App.errorNube(err)
   );
@@ -96,11 +99,39 @@ export function iniciarNube(db, fs) {
   return {
     // Agregar, quitar o mover (quitar de un día + agregar a otro) en una
     // sola operación atómica.
+    // Al quitar un lugar de un día, también se borra su marca de visitado ahí.
     async cambiarAgenda(lugarId, quitarDe, agregarA, quien) {
       const lote = writeBatch(db);
-      if (quitarDe) lote.set(doc(colAgenda, quitarDe), datosDia(arrayRemove(lugarId), quien), { merge: true });
+      if (quitarDe) {
+        lote.set(doc(colAgenda, quitarDe),
+          { ...datosDia(arrayRemove(lugarId), quien), visitados: arrayRemove(lugarId) },
+          { merge: true });
+      }
       if (agregarA) lote.set(doc(colAgenda, agregarA), datosDia(arrayUnion(lugarId), quien), { merge: true });
       await lote.commit();
+    },
+
+    // Cambia el orden de un día. Va en una transacción: lee la lista actual
+    // del servidor y solo reordena lo que sigue ahí, así no se pierde algo
+    // que otra persona haya agregado o quitado en ese mismo momento.
+    // (Necesita internet: las transacciones no funcionan sin señal.)
+    async reordenarDia(diaId, ordenDeseado, quien) {
+      const ref = doc(colAgenda, diaId);
+      await runTransaction(db, async (tx) => {
+        const snap = await tx.get(ref);
+        const actuales = snap.exists() && Array.isArray(snap.data().lugares) ? snap.data().lugares : [];
+        const enOrden = ordenDeseado.filter((id) => actuales.includes(id));
+        const nuevos = actuales.filter((id) => !enOrden.includes(id)); // llegaron mientras tanto
+        tx.set(ref, datosDia([...enOrden, ...nuevos], quien), { merge: true });
+      });
+    },
+
+    async marcarVisitado(diaId, lugarId, si, quien) {
+      await setDoc(doc(colAgenda, diaId), {
+        visitados: si ? arrayUnion(lugarId) : arrayRemove(lugarId),
+        actualizadoPor: quien.nombre,
+        actualizadoEn: serverTimestamp(),
+      }, { merge: true });
     },
 
     async votar(lugarId, si, quien) {
@@ -136,7 +167,9 @@ export function iniciarNube(db, fs) {
       const lote = writeBatch(db);
       lote.delete(doc(colLugares, id));
       diasDondeEsta.forEach((diaId) => {
-        lote.set(doc(colAgenda, diaId), datosDia(arrayRemove(id), quien), { merge: true });
+        lote.set(doc(colAgenda, diaId),
+          { ...datosDia(arrayRemove(id), quien), visitados: arrayRemove(id) },
+          { merge: true });
       });
       await lote.commit();
     },

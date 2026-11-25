@@ -807,3 +807,108 @@ main { padding: 16px; max-width: 900px; margin: 0 auto; }
 /* Al pasar el mouse (o enfocar con teclado) recupera el color */
 .tarjeta.asignada:hover img,
 .tarjeta.asignada:focus-within img { filter: none; opacity: 1; }
+
+/* ============================================================
+   Día expandido: lista con detalles, orden y visitados
+   ============================================================ */
+.dia-cabecera { gap: 8px; flex-wrap: wrap; }
+.dia-cabecera-der { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.dia-expandir {
+  border: 1px solid var(--naranja);
+  background: #fff;
+  color: var(--naranja-oscuro);
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 0.75rem;
+  padding: 4px 10px;
+  border-radius: 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.dia-expandir:hover { background: #fff6ec; }
+.dia-expandir:focus-visible { outline: 3px solid #2980b9; outline-offset: 2px; }
+.dia.expandido .dia-expandir { background: var(--naranja); color: #fff; }
+
+.detalle-lista {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.detalle-item {
+  display: grid;
+  grid-template-columns: auto 56px 1fr;
+  grid-template-areas:
+    "controles foto principal"
+    "controles datos datos";
+  gap: 6px 12px;
+  align-items: start;
+  background: #fff;
+  border: 1px solid var(--borde);
+  border-radius: 12px;
+  padding: 10px;
+}
+.detalle-controles {
+  grid-area: controles;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding-top: 2px;
+}
+.visitado-check {
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  accent-color: #27ae60;
+  cursor: pointer;
+}
+.visitado-check:disabled { cursor: default; }
+.detalle-agarre {
+  font-size: 1.3rem;
+  line-height: 1;
+  color: var(--gris);
+  cursor: grab;
+  padding: 4px 2px;
+  touch-action: none; /* el dedo arrastra en vez de hacer scroll */
+  user-select: none;
+}
+.detalle-agarre:active { cursor: grabbing; }
+.detalle-foto { grid-area: foto; width: 56px; height: 56px; border-radius: 10px; object-fit: cover; }
+.detalle-principal { grid-area: principal; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.detalle-nombre { font-weight: 700; font-size: 0.95rem; overflow-wrap: anywhere; }
+.detalle-mover { align-self: flex-start; width: auto; margin-top: 0; padding: 6px 12px; font-size: 0.75rem; }
+.detalle-datos {
+  grid-area: datos;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 0.8rem;
+  color: var(--texto);
+  overflow-wrap: anywhere;
+}
+.detalle-datos a { color: #1f5f99; }
+
+/* Ya visitado: nombre tachado suave y foto atenuada */
+.detalle-item.visitado { background: #f3faf5; border-color: #bfe3cb; }
+.detalle-item.visitado .detalle-nombre { text-decoration: line-through; text-decoration-color: #27ae60; color: var(--gris); }
+.detalle-item.visitado .detalle-foto { opacity: 0.6; }
+
+/* Mientras se arrastra */
+.detalle-fantasma { opacity: 0.4; background: #fff6ec; }
+
+/* Pantallas anchas: los datos van a la derecha, en el espacio sobrante */
+@media (min-width: 640px) {
+  .detalle-item {
+    grid-template-columns: auto 64px minmax(160px, 1fr) minmax(200px, 1.4fr);
+    grid-template-areas: "controles foto principal datos";
+    align-items: center;
+  }
+  .detalle-foto { width: 64px; height: 64px; }
+  .detalle-datos { border-left: 1px solid var(--borde); padding-left: 12px; }
+}

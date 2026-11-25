@@ -12,8 +12,9 @@ rules_version = '2';
 //    fechas). Cualquiera lee; SOLO el admin la escribe (reiniciar viaje).
 //  - viajes/{viaje}/lugares/{id}: cualquiera lee; los miembros crean
 //    y editan; SOLO el admin borra.
-//  - viajes/{viaje}/agenda/{fecha}: cualquiera lee; los miembros escriben,
-//    pero solo en fechas dentro del viaje. SOLO el admin borra.
+//  - viajes/{viaje}/agenda/{fecha}: cualquiera lee; los miembros escriben
+//    (orden de los lugares y cuáles ya se visitaron), pero solo en fechas
+//    dentro del viaje. SOLO el admin borra.
 //  - viajes/{viaje}/votos/{uid}: cualquiera lee; cada miembro solo
 //    escribe SU propio voto. SOLO el admin borra.
 //  - Todo lo demás: bloqueado.
@@ -70,9 +71,11 @@ service cloud.firestore {
       return u == '' || (u.size() <= 300 && u.matches('^https?://[^ ]+$'));
     }
 
+    // "horario" es opcional (los lugares viejos no lo tienen).
     function lugarValido(d) {
-      return d.keys().hasOnly(['nombre', 'categoria', 'mapa', 'mapsUrl', 'web', 'wiki',
+      return d.keys().hasOnly(['nombre', 'categoria', 'mapa', 'mapsUrl', 'web', 'wiki', 'horario',
                                'creadoPor', 'creadoEn', 'actualizadoPor', 'actualizadoEn'])
+        && textoValido(d.get('horario', ''), 120)
         && textoValido(d.nombre, 60) && d.nombre.size() > 0
         && categoriaValida(d.categoria)
         && textoValido(d.mapa, 120)
@@ -132,8 +135,9 @@ service cloud.firestore {
           && fechaValida(diaId)
           && diaId >= get(/databases/$(database)/documents/viajes/$(viajeId)).data.inicio
           && diaId <= get(/databases/$(database)/documents/viajes/$(viajeId)).data.fin
-          && request.resource.data.keys().hasOnly(['lugares', 'actualizadoPor', 'actualizadoEn'])
-          && listaValida(request.resource.data.lugares, 50)
+          && request.resource.data.keys().hasOnly(['lugares', 'visitados', 'actualizadoPor', 'actualizadoEn'])
+          && listaValida(request.resource.data.get('lugares', []), 50)
+          && listaValida(request.resource.data.get('visitados', []), 50)
           && textoValido(request.resource.data.actualizadoPor, 60)
           && request.resource.data.actualizadoEn == request.time;
         allow delete: if esAdmin();
