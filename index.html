@@ -56,6 +56,11 @@
         o sacarla del plan.
       </p>
       <div id="dias"></div>
+      <!-- Solo admin: descargar el resumen sin reiniciar nada -->
+      <div id="dias-pie" class="dias-pie" hidden>
+        <button id="btn-descargar-resumen" type="button" class="btn-secundario">⬇️ Descargar resumen del viaje</button>
+        <small class="ayuda-campo">Un .txt con lo que ya marcaron como visitado. No borra nada.</small>
+      </div>
     </section>
 
     <!-- VISTA: FAVORITOS -->
@@ -102,6 +107,24 @@
       <p id="agregar-sub" class="modal-sub"></p>
       <div id="agregar-lista" class="agregar-lista"></div>
       <button id="btn-agregar-listo" type="button" class="btn-principal btn-listo">Listo</button>
+    </div>
+  </div>
+
+  <!-- "¿Estás seguro?" antes de reiniciar el viaje (solo admin) -->
+  <div id="modal-confirmar-reinicio" class="modal" aria-hidden="true">
+    <div class="modal-caja" role="alertdialog" aria-modal="true"
+         aria-labelledby="confirmar-titulo" aria-describedby="confirmar-texto confirmar-detalle">
+      <button class="modal-cerrar" type="button" aria-label="Cerrar">✕</button>
+      <h3 id="confirmar-titulo">¿Estás seguro?</h3>
+      <p id="confirmar-texto" class="modal-sub">
+        Si dices que sí, se descarga un resumen (.txt) con lo que visitaron en este viaje
+        y luego eliges las fechas del viaje nuevo.
+      </p>
+      <p id="confirmar-detalle" class="viaje-aviso"></p>
+      <div class="form-botones">
+        <button id="btn-reinicio-si" type="button" class="btn-principal">Sí, reiniciar</button>
+        <button id="btn-reinicio-no" type="button" class="btn-secundario">No</button>
+      </div>
     </div>
   </div>
 

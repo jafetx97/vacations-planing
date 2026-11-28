@@ -21,6 +21,10 @@ Publicada en https://vacations-planing.pamolitas.com (GitHub Pages).
   Actividades, Alimentos o Familia). También se crea desde el formulario de lugar, con
   "➕ Nueva categoría…". Solo el admin edita o borra, y solo se borra si está vacía.
   Las categorías se conservan al reiniciar el viaje.
+- **Minimizar días** (pestaña "Los días"): toca el nombre del día (▾) para esconder su
+  contenido; minimizado muestra cuántos planes tiene. Cada navegador recuerda cuáles
+  minimizaste. Al abrir la pestaña, la app baja sola al **día de hoy** (marcado "Hoy"),
+  y si estaba minimizado lo abre. Usa la fecha del dispositivo; no necesita librerías.
 - **☰ Detalle en cada día** (pestaña "Los días"): cambia ese día a modo lista, un lugar
   debajo de otro, con su información a la derecha (categoría, horario, Google Maps,
   sitio web, votos, quién lo agregó). Ahí se puede:
@@ -35,8 +39,12 @@ Publicada en https://vacations-planing.pamolitas.com (GitHub Pages).
   "alimentos"…). Es una sola búsqueda que se aplica a Actividades, Los días y Votos.
   En "Los días" solo muestra los días que tienen coincidencias.
 - **Sin sesión**: se ve todo en modo solo lectura.
-- **↺ Reiniciar viaje** (solo admin, arriba a la derecha): para reutilizar el sitio con
-  otro viaje. Pide nombre, ciudad y fechas de inicio y fin (máximo 60 días), y borra la
+- **↺ Reiniciar viaje** (solo admin, arriba a la derecha): primero pregunta "¿Estás
+  seguro?". Con **Sí** se descarga un resumen `.txt` con los lugares que se marcaron como
+  visitados en cada día, y después se abre el formulario del viaje nuevo (nada se borra
+  hasta guardarlo). Con **No** no pasa nada. Al final de "Los días" está
+  **⬇️ Descargar resumen del viaje** (solo admin) para bajarlo en cualquier momento sin
+  borrar nada. Sirve para reutilizar el sitio con otro viaje. Pide nombre, ciudad y fechas de inicio y fin (máximo 60 días), y borra la
   agenda y los votos del viaje anterior. Los lugares se borran también, a menos que
   marques "Conservar la lista de lugares actual". Los días de la pestaña "Los días"
   se generan solos a partir de esas fechas. No se guarda historial de viajes.

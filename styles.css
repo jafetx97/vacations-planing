@@ -960,3 +960,59 @@ main { padding: 16px; max-width: 900px; margin: 0 auto; }
 #categoria-emoji { max-width: 120px; }
 #modal-categoria .modal-caja, #modal-categorias .modal-caja { max-height: 92vh; overflow-y: auto; }
 .btn-quitar:disabled { opacity: 0.5; cursor: default; }
+
+/* ============================================================
+   Los días: minimizar / mostrar y marca de "Hoy"
+   ============================================================ */
+.dia-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  border: none;
+  background: none;
+  padding: 2px 0;
+  font-family: inherit;
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--texto);
+  text-align: left;
+  cursor: pointer;
+}
+.dia-toggle:focus-visible { outline: 3px solid #2980b9; outline-offset: 2px; border-radius: 6px; }
+.dia-flecha { color: var(--gris); transition: transform 0.2s; }
+.dia.minimizado .dia-flecha { transform: rotate(-90deg); }
+.dia.minimizado { box-shadow: none; outline: 1px solid var(--borde); }
+.dia.minimizado .dia-cabecera { background: #f6efe6; }
+.dia-cuenta {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--gris);
+  background: #fff;
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+.dia-hoy {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #fff;
+  background: #27ae60;
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+.dia.hoy { outline: 2px solid #27ae60; }
+.dia.hoy .dia-cabecera { background: #e3f5ea; }
+
+/* ============================================================
+   Resumen del viaje: botón al final de "Los días"
+   ============================================================ */
+.dias-pie {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin: 18px 0 8px;
+  text-align: center;
+}
+.dias-pie[hidden] { display: none; }
+#modal-confirmar-reinicio .viaje-aviso { margin-top: 0; }

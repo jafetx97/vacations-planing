@@ -254,6 +254,9 @@ function pintarEncabezado() {
   sub.hidden = partes.length === 0;
 
   $("#btn-viaje").hidden = !(nube && esAdmin());
+  // Botón al final de "Los días" (solo admin, con viaje configurado).
+  $("#dias-pie").hidden = !(nube && esAdmin() && viaje);
+  if (!(nube && esAdmin())) cerrarModal(modalConfirmar);
   // Sin viaje no hay nada que buscar.
   $("#buscador").hidden = sinViaje();
 }
@@ -629,27 +632,43 @@ function pintarDias() {
     hayResultados = true;
 
     const expandido = diasExpandidos.has(dia.id);
+    // Buscando, todos los días con coincidencias se muestran abiertos
+    // (sin cambiar lo que la persona había minimizado).
+    const minimizado = !busqueda && diasMinimizados.has(dia.id);
+    const esHoy = dia.id === hoyIso();
+    const total = estado.agenda[dia.id].length;
     const el = document.createElement("div");
-    el.className = "dia" + (expandido ? " expandido" : "");
+    el.className = "dia" + (expandido ? " expandido" : "") + (minimizado ? " minimizado" : "") + (esHoy ? " hoy" : "");
+    el.dataset.dia = dia.id;
     el.innerHTML = `
       <div class="dia-cabecera">
-        <span>${escapar(dia.etiqueta)}</span>
+        <button type="button" class="dia-toggle" data-dia="${escapar(dia.id)}"
+                aria-expanded="${!minimizado}"
+                aria-label="${minimizado ? "Mostrar" : "Minimizar"} el ${escapar(dia.etiqueta)}">
+          <span class="dia-flecha" aria-hidden="true">▾</span>
+          <span>${escapar(dia.etiqueta)}</span>
+          ${esHoy ? `<span class="dia-hoy">Hoy</span>` : ""}
+          ${minimizado && total ? `<span class="dia-cuenta">${total} plan${total === 1 ? "" : "es"}</span>` : ""}
+        </button>
         <span class="dia-cabecera-der">
           ${dia.fijo ? `<span class="fijo">${escapar(dia.fijo)}</span>` : ""}
+          ${minimizado ? "" : `
           <button type="button" class="dia-expandir" data-dia="${escapar(dia.id)}"
                   aria-expanded="${expandido}"
                   aria-label="${expandido ? "Volver a la vista de tarjetas" : "Ver en lista con detalles"} del ${escapar(dia.etiqueta)}">
             ${expandido ? "▦ Tarjetas" : "☰ Detalle"}
-          </button>
+          </button>`}
         </span>
       </div>
-      <div class="dia-lista"></div>
+      ${minimizado ? "" : `<div class="dia-lista"></div>
       ${puedeEditar
         ? `<div class="dia-pie">
              <button type="button" class="dia-mas" data-dia="${escapar(dia.id)}"
                      aria-label="Agregar una actividad al ${escapar(dia.etiqueta)}">+</button>
            </div>`
-        : ""}`;
+        : ""}`}`;
+
+    if (minimizado) { cont.appendChild(el); return; }
 
     const lista = $(".dia-lista", el);
     if (ids.length === 0) {
@@ -666,6 +685,62 @@ function pintarDias() {
   });
 
   if (busqueda && !hayResultados) cont.innerHTML = sinResultados();
+
+  // Se pidió ir a hoy (al abrir la pestaña) y los días ya están pintados.
+  if (irAHoyPendiente && DIAS.length && $("#vista-dias").classList.contains("activa")) {
+    irAHoyPendiente = false;
+    requestAnimationFrame(irAHoy);
+  }
+}
+
+// ============================================================
+//  MINIMIZAR DÍAS e IR A HOY
+// ============================================================
+// Qué días están minimizados (se recuerda en este dispositivo).
+const CLAVE_MINIMIZADOS = "vacaciones-dias-minimizados";
+let diasMinimizados = new Set();
+try {
+  const g = JSON.parse(localStorage.getItem(CLAVE_MINIMIZADOS) || "[]");
+  if (Array.isArray(g)) diasMinimizados = new Set(g);
+} catch (e) {
+  /* si está corrupto, todos abiertos */
+}
+
+function guardarMinimizados() {
+  localStorage.setItem(CLAVE_MINIMIZADOS, JSON.stringify([...diasMinimizados]));
+}
+
+function alternarMinimizado(diaId) {
+  if (!DIAS_POR_ID[diaId] || busqueda) return; // buscando, todos se ven abiertos
+  if (diasMinimizados.has(diaId)) diasMinimizados.delete(diaId);
+  else diasMinimizados.add(diaId);
+  guardarMinimizados();
+  pintarDias();
+  const b = $(`.dia-toggle[data-dia="${CSS.escape(diaId)}"]`);
+  if (b) b.focus();
+}
+
+// Fecha de hoy en este dispositivo, en el mismo formato que los IDs de día.
+const hoyIso = () => isoDeFecha(new Date());
+
+let irAHoyPendiente = false;
+
+// Lleva la pantalla al día de hoy (si está dentro del viaje y visible).
+// Si estaba minimizado, lo abre: la idea es ver qué toca hoy.
+function irAHoy() {
+  const hoy = hoyIso();
+  if (!DIAS_POR_ID[hoy]) return; // hoy no es parte del viaje
+  if (diasMinimizados.has(hoy) && !busqueda) {
+    diasMinimizados.delete(hoy);
+    guardarMinimizados();
+    pintarDias();
+  }
+  const el = $(`.dia[data-dia="${CSS.escape(hoy)}"]`);
+  if (!el) return; // escondido por la búsqueda
+  // El encabezado de arriba es fijo: dejamos espacio para que no tape el día.
+  const alto = $(".app-header").offsetHeight + 12;
+  const y = el.getBoundingClientRect().top + window.scrollY - alto;
+  window.scrollTo({ top: Math.max(0, y), behavior: "smooth" });
 }
 
 // ============================================================
@@ -1771,6 +1846,97 @@ function errorViaje(texto) {
   e.hidden = !texto;
 }
 
+// ============================================================
+//  RESUMEN DEL VIAJE (.txt) y "¿Estás seguro?" antes de reiniciar
+// ============================================================
+// Texto con los lugares VISITADOS de cada día (solo el nombre).
+function generarResumen() {
+  if (!viaje || !DIAS.length) throw new Error("No hay viaje configurado.");
+  const fecha = (iso) => fechaDeIso(iso).toLocaleDateString("es", { day: "numeric", month: "short", year: "numeric" }).replace(".", "");
+  const hoy = new Date().toLocaleDateString("es", { day: "numeric", month: "short", year: "numeric" }).replace(".", "");
+  const lineas = [
+    `RESUMEN DE TU VIAJE: ${viaje.nombre}`,
+    `${viaje.ciudad ? `${viaje.ciudad} · ` : ""}${fecha(viaje.inicio)} – ${fecha(viaje.fin)} (${DIAS.length} día${DIAS.length === 1 ? "" : "s"})`,
+    `Descargado el ${hoy}${sesion.nombre ? ` por ${sesion.nombre}` : ""}`,
+    "",
+  ];
+
+  let total = 0;
+  DIAS.forEach((d) => {
+    // Visitados en el orden del día.
+    const visitados = estado.agenda[d.id]
+      .filter((id) => esVisitado(d.id, id) && LUGARES_POR_ID[id])
+      .map((id) => LUGARES_POR_ID[id].nombre);
+    total += visitados.length;
+    lineas.push(d.etiqueta.toUpperCase());
+    if (visitados.length) visitados.forEach((n) => lineas.push(`  [x] ${n}`));
+    else lineas.push("  (nada visitado)");
+    lineas.push("");
+  });
+  lineas.push(`Total visitado: ${total} lugar${total === 1 ? "" : "es"}`);
+  return lineas.join("\r\n");
+}
+
+// Descarga el resumen como .txt. Lanza error si algo falla (así el
+// reinicio no sigue si el resumen no se pudo guardar).
+function descargarResumen() {
+  const texto = generarResumen();
+  const nombre = normalizar(viaje.nombre).replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "viaje";
+  // La marca BOM ayuda a que el Bloc de notas muestre bien los acentos.
+  const blob = new Blob(["\uFEFF" + texto], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `resumen-${nombre}-${viaje.inicio}.txt`;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  return a.download;
+}
+
+function descargarResumenBoton() {
+  if (!nube || !esAdmin() || !viaje) return;
+  try {
+    avisar(`Descargado: ${descargarResumen()}`);
+  } catch (err) {
+    console.error("No se pudo crear el resumen:", err);
+    avisar("No se pudo crear el resumen.");
+  }
+}
+
+const modalConfirmar = $("#modal-confirmar-reinicio");
+
+function pedirConfirmacionReinicio() {
+  if (!nube || !esAdmin()) return;
+  if (!viaje) { abrirFormViaje(); return; } // no hay nada que borrar
+
+  const actividades = Object.values(agendaCruda).reduce((n, a) => n + a.length, 0);
+  const totalVotosAhora = Object.values(votos).reduce((n, v) => n + v.lugares.length, 0);
+  const lugares = Object.keys(LUGARES_POR_ID).length;
+  const s = (n, uno, varios) => `${n} ${n === 1 ? uno : varios}`;
+  $("#confirmar-detalle").textContent =
+    `Al guardar el viaje nuevo se borrará de "${viaje.nombre}": ` +
+    `${s(actividades, "actividad", "actividades")} en la agenda, ${s(totalVotosAhora, "voto", "votos")} ` +
+    `y ${s(lugares, "lugar", "lugares")} (los lugares los puedes conservar en el siguiente paso).`;
+  abrirModal(modalConfirmar);
+  $("#btn-reinicio-no").focus();
+}
+
+function confirmarReinicio() {
+  if (!nube || !esAdmin()) return;
+  cerrarModal(modalConfirmar);
+  try {
+    const archivo = descargarResumen();
+    avisar(`Resumen guardado: ${archivo}`);
+  } catch (err) {
+    console.error("No se pudo crear el resumen:", err);
+    avisar("No se pudo descargar el resumen, así que no se reinició nada.");
+    return;
+  }
+  abrirFormViaje();
+}
+
 function abrirFormViaje() {
   if (!nube || !esAdmin()) return;
   const primera = !viaje;
@@ -1815,20 +1981,8 @@ async function guardarViaje(e) {
   if (dias > MAX_DIAS_VIAJE) return errorViaje(`El viaje puede durar máximo ${MAX_DIAS_VIAJE} días.`);
   if (!navigator.onLine) return errorViaje("Necesitas internet para reiniciar el viaje.");
 
-  // Resumen de lo que se va a borrar.
-  const actividades = Object.values(agendaCruda).reduce((n, a) => n + a.length, 0);
-  const personas = Object.values(votos).filter((v) => v.lugares.length).length;
-  const totalVotosAhora = Object.values(votos).reduce((n, v) => n + v.lugares.length, 0);
-  const lugares = Object.keys(LUGARES_POR_ID).length;
-  const ok = confirm(
-    `Vas a empezar "${cfg.nombre}" (${rangoLegible(cfg)}, ${dias} día${dias > 1 ? "s" : ""}).\n\n` +
-    `Se borrará:\n` +
-    `• ${actividades} actividad${actividades === 1 ? "" : "es"} en la agenda\n` +
-    `• ${totalVotosAhora} voto${totalVotosAhora === 1 ? "" : "s"} de ${personas} persona${personas === 1 ? "" : "s"}\n` +
-    `• ${conservar ? "Los lugares se conservan" : `${lugares} lugar${lugares === 1 ? "" : "es"}`}\n\n` +
-    `No se puede deshacer. ¿Continuar?`
-  );
-  if (!ok) return;
+  // (La confirmación ya se hizo con el pop up "¿Estás seguro?", que además
+  // descargó el resumen del viaje anterior.)
 
   guardandoViaje = true;
   const boton = $("#btn-guardar-viaje");
@@ -1866,6 +2020,13 @@ function cambiarVista(nombre) {
   $$(".vista").forEach((v) => v.classList.remove("activa"));
   $(`#vista-${nombre}`).classList.add("activa");
   if (nombre === "favoritos") pintarFavoritos();
+  // Al abrir "Los días", ir al día de hoy. Si los días todavía no cargan,
+  // se hace en cuanto se pinten.
+  irAHoyPendiente = false;
+  if (nombre === "dias") {
+    if (DIAS.length && $(".dia")) requestAnimationFrame(irAHoy);
+    else irAHoyPendiente = true;
+  }
 }
 
 // ============================================================
@@ -1884,7 +2045,11 @@ document.addEventListener("click", (e) => {
   if (editar) { abrirFormLugar(editar.dataset.id); return; }
 
   if (t.closest("#btn-nuevo-lugar")) { abrirFormLugar(); return; }
-  if (t.closest("#btn-viaje, #btn-viaje-config")) { abrirFormViaje(); return; }
+  if (t.closest("#btn-viaje")) { pedirConfirmacionReinicio(); return; }
+  if (t.closest("#btn-viaje-config")) { abrirFormViaje(); return; }
+  if (t.closest("#btn-reinicio-si")) { confirmarReinicio(); return; }
+  if (t.closest("#btn-reinicio-no")) { cerrarModal(modalConfirmar); return; }
+  if (t.closest("#btn-descargar-resumen")) { descargarResumenBoton(); return; }
   if (t.closest("#btn-cancelar-viaje")) { cerrarModal(modalViaje); return; }
   if (t.closest("#btn-buscar-foto")) { buscarFoto(); return; }
   if (t.closest("#btn-borrar-lugar")) { borrarLugar(); return; }
@@ -1911,6 +2076,9 @@ document.addEventListener("click", (e) => {
     pintarEmojis();
     return;
   }
+
+  const toggleDia = t.closest(".dia-toggle");
+  if (toggleDia) { alternarMinimizado(toggleDia.dataset.dia); return; }
 
   const expandir = t.closest(".dia-expandir");
   if (expandir) { alternarExpandido(expandir.dataset.dia); return; }
